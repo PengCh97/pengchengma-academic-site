@@ -131,6 +131,36 @@
 
     return `${pick(c)}-${pick(a)}型`;
   }
+  function nakmgFractions(sample) {
+    const rawNa = Math.max(0, sample.Na) / 1000;
+    const rawK = Math.max(0, sample.K) / 100;
+    const rawMg = Math.sqrt(Math.max(0, sample.Mg));
+    const sum = rawNa + rawK + rawMg;
+    return {
+      rawNa, rawK, rawMg, sum,
+      Na: sum ? rawNa / sum * 100 : 0,
+      K: sum ? rawK / sum * 100 : 0,
+      Mg: sum ? rawMg / sum * 100 : 0
+    };
+  }
+  function naKTemperature(sample) {
+    // Giggenbach (1988): concentrations use the same mass-concentration unit (mg/L here).
+    const na = Math.max(0, sample.Na);
+    const k = Math.max(0, sample.K);
+    if (!(na > 0 && k > 0)) return NaN;
+    const denom = Math.log10(na / k) + 1.75;
+    return Math.abs(denom) < 1e-12 ? NaN : 1390 / denom - 273.15;
+  }
+  function kMgTemperature(sample) {
+    // Giggenbach K-Mg thermometer: K and Mg use the same mass-concentration unit (mg/L here).
+    const k = Math.max(0, sample.K);
+    const mg = Math.max(0, sample.Mg);
+    if (!(k > 0 && mg > 0)) return NaN;
+    const ratio = (k * k) / mg;
+    if (!(ratio > 0)) return NaN;
+    const denom = 14 - Math.log10(ratio);
+    return Math.abs(denom) < 1e-12 ? NaN : 4410 / denom - 273.15;
+  }
   function computeKurlov(sample) {
     const ionMeq = {};
     kFields.forEach(k => ionMeq[k] = meq(sample[k], ionDefs[k]));
@@ -151,11 +181,47 @@
       CO3: majorAn ? ionMeq.CO3/majorAn*100 : 0,
       HCO3CO3: majorAn ? (ionMeq.HCO3+ionMeq.CO3)/majorAn*100 : 0
     };
+
+    const nk = nakmgFractions(sample);
+    const nkCoord = nakmgCoordinates(nk);
+    const fullY = curveYAtX(NAKMG_FULL_CURVE, nkCoord.x);
+    const lowerY = curveYAtX(NAKMG_LOWER_CURVE, nkCoord.x);
+    const tol = TRI_H * 0.012;
+    let zone = '非平衡区';
+    if (nk.sum > 0) {
+      if (nkCoord.y >= fullY - tol) zone = '完全平衡区';
+      else if (nkCoord.y >= lowerY - tol) zone = '局部平衡区';
+    }
+    const tNaK = naKTemperature(sample);
+    const tKMg = kMgTemperature(sample);
+    let recommendFormula = '不建议直接选用 Na-K / K-Mg 温标';
+    let reservoirTemp = NaN;
+    let remark = '位于非平衡区，建议结合其他温标或水岩平衡证据综合判断。';
+    if (zone === '完全平衡区') {
+      recommendFormula = 'Na-K 温标';
+      reservoirTemp = tNaK;
+      remark = Number.isFinite(tNaK) ? '优先采用 Na-K 温标估算理论热储温度。' : 'Na 或 K 数据不足，无法计算 Na-K 温标。';
+    } else if (zone === '局部平衡区') {
+      recommendFormula = 'K-Mg 温标';
+      reservoirTemp = tKMg;
+      remark = Number.isFinite(tKMg) ? '优先采用 K-Mg 温标估算理论热储温度。' : 'K 或 Mg 数据不足，无法计算 K-Mg 温标。';
+    }
+
     return {
       ...sample, ionMeq, catTotal, anTotal, balance, p,
       M: kFields.reduce((s,k)=>s+sample[k],0)/1000,
       type: hydroType(p),
-      formula: kurlovFormula(sample, ionMeq, catTotal, anTotal)
+      formula: kurlovFormula(sample, ionMeq, catTotal, anTotal),
+      nakmg: {
+        ...nk,
+        coord: nkCoord,
+        zone,
+        recommendFormula,
+        tNaK,
+        tKMg,
+        reservoirTemp,
+        remark
+      }
     };
   }
   function calculateKurlov() {
@@ -163,18 +229,96 @@
     const status = $('#kurlovStatus');
     if (!rows.length) {
       status.textContent = '请至少输入一组有效的离子浓度。';
-      $('#kurlovResults').innerHTML=''; kurlovComputed=[]; drawPiper([]); return;
+      $('#kurlovResults').innerHTML='';
+      $('#nakmgResults').innerHTML='';
+      kurlovComputed=[]; drawPiper([]); drawNaKMg([]); return;
     }
     kurlovComputed = rows.map(computeKurlov);
     $('#kurlovResults').innerHTML = kurlovComputed.map(r => `<tr><td>${safeText(r.id)}</td><td>${fmt(r.M,3)}</td><td>${fmt(r.catTotal,3)}</td><td>${fmt(r.anTotal,3)}</td><td class="${Math.abs(r.balance)>5?'warn-cell':'ok-cell'}">${fmt(r.balance,2)}%</td><td>${safeText(r.type)}</td><td class="formula-cell">${safeText(r.formula)}</td></tr>`).join('');
-    status.textContent = `已计算 ${kurlovComputed.length} 组水样；Piper 三线图已同步更新。`;
+    $('#nakmgResults').innerHTML = kurlovComputed.map(r => `<tr><td>${safeText(r.id)}</td><td>${fmt(r.nakmg.rawNa,4)}</td><td>${fmt(r.nakmg.rawK,4)}</td><td>${fmt(r.nakmg.rawMg,4)}</td><td>${safeText(r.nakmg.zone)}</td><td>${safeText(r.nakmg.recommendFormula)}</td><td>${fmt(r.nakmg.tNaK,2)}</td><td>${fmt(r.nakmg.tKMg,2)}</td><td>${fmt(r.nakmg.reservoirTemp,2)}</td><td>${safeText(r.nakmg.remark)}</td></tr>`).join('');
+    status.textContent = `已计算 ${kurlovComputed.length} 组水样；Piper 三线图与 Na-K-Mg 三角图已同步更新。`;
     drawPiper(kurlovComputed);
+    drawNaKMg(kurlovComputed);
   }
 
   // ---------- Piper diagram ----------
   const PIPER_RIGHT = 1.35;
   const SQ3 = Math.sqrt(3);
   const TRI_H = SQ3 / 2;
+  const NAKMG_TMIN = 0;
+  const NAKMG_TMAX = 360;
+  const NAKMG_ISOTHERM_STEP = 20;
+  const NAKMG_LABEL_STEP = 40;
+  const MARKER_COLORS = ['#55595d','#d63cff','#1d9be0','#10c738','#f01818','#f08a19','#7f59c7','#008f8c','#b14766','#284bd6','#6b8e23','#b66b00'];
+  const MARKER_SHAPES = ['square','circle','triangle','diamond','left','right','pentagon','star','plus','cross','down','hexagon'];
+  const markerColor = i => MARKER_COLORS[Math.floor(i/4)%MARKER_COLORS.length];
+  const markerShape = i => MARKER_SHAPES[i%MARKER_SHAPES.length];
+
+  function nakmgCoordinates(p) {
+    const na = p.Na / 100;
+    const mg = p.Mg / 100;
+    return { x: mg + na / 2, y: TRI_H * na };
+  }
+
+  function nakmgEquilibriumPoint(tempC, coefficient = 457) {
+    // Liu et al. (2022), following Giggenbach diagram construction:
+    // log10(K^2/Mg) = 14 - 4410/T(K), set K = 1 mg/L.
+    const T = tempC + 273.15;
+    const K = 1;
+    const lkm = 14 - 4410 / T;
+    const Mg = (K * K) / Math.pow(10, lkm);
+    // Full-equilibrium: Na = 457*K^0.37*Mg^0.315
+    // Lower boundary:   Na = 100*K^0.37*Mg^0.315
+    const Na = coefficient * Math.pow(K, 0.37) * Math.pow(Mg, 0.315);
+    const S = Na / 1000 + K / 100 + Math.sqrt(Mg);
+    const p = {
+      Na: S ? (Na / 1000) / S * 100 : 0,
+      K:  S ? (K / 100) / S * 100 : 0,
+      Mg: S ? Math.sqrt(Mg) / S * 100 : 0
+    };
+    return { tempC, Na, K, Mg, p, coord: nakmgCoordinates(p) };
+  }
+
+  function nakmgCurve(coefficient, step = 2) {
+    const pts = [];
+    for (let t = NAKMG_TMIN; t <= NAKMG_TMAX + 1e-9; t += step) pts.push(nakmgEquilibriumPoint(t, coefficient));
+    return pts;
+  }
+
+  const NAKMG_FULL_CURVE = nakmgCurve(457, 2);
+  const NAKMG_LOWER_CURVE = nakmgCurve(100, 2);
+  // Keep dashed isotherms dense (20 °C), but show temperature text every 40 °C.
+  const NAKMG_ISOTHERMS = [];
+  for (let t = NAKMG_TMIN; t <= NAKMG_TMAX; t += NAKMG_ISOTHERM_STEP) {
+    NAKMG_ISOTHERMS.push({
+      tempC: t,
+      full: nakmgEquilibriumPoint(t, 457),
+      lower: nakmgEquilibriumPoint(t, 100)
+    });
+  }
+  const NAKMG_TEMP_LABELS = [];
+  // Temperature text is shown every 40 °C from 0 °C, but the 360 °C label is intentionally omitted.
+  for (let t = NAKMG_TMIN; t < NAKMG_TMAX; t += NAKMG_LABEL_STEP) {
+    NAKMG_TEMP_LABELS.push({
+      tempC: t,
+      full: nakmgEquilibriumPoint(t, 457),
+      lower: nakmgEquilibriumPoint(t, 100)
+    });
+  }
+
+  function curveYAtX(curve, x) {
+    const pts = curve.map(d => d.coord).slice().sort((a,b)=>a.x-b.x);
+    if (x <= pts[0].x) return pts[0].y;
+    if (x >= pts[pts.length-1].x) return pts[pts.length-1].y;
+    for (let i=1; i<pts.length; i++) {
+      if (x <= pts[i].x) {
+        const a=pts[i-1], b=pts[i];
+        const f=(x-a.x)/((b.x-a.x)||1);
+        return a.y+(b.y-a.y)*f;
+      }
+    }
+    return pts[pts.length-1].y;
+  }
 
   function piperCoordinates(p) {
     // Cation triangle: Ca at lower-left, Na+K at lower-right, Mg at apex.
@@ -312,8 +456,6 @@
     });
 
     // Marker drawing.
-    const colors=['#55595d','#d63cff','#1d9be0','#10c738','#f01818','#f08a19','#7f59c7','#008f8c','#b14766','#284bd6','#6b8e23','#b66b00'];
-    const shapes=['square','circle','triangle','diamond','left','right','pentagon','star','plus','cross','down','hexagon'];
     function drawMarker(x,y,shape,color,size=9){
       ctx.save();ctx.translate(sx(x),sy(y));ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=2;
       ctx.beginPath();
@@ -334,7 +476,7 @@
     }
 
     data.forEach((r,i)=>{
-      const c=piperCoordinates(r.p), color=colors[Math.floor(i/4)%colors.length], shape=shapes[i%shapes.length];
+      const c=piperCoordinates(r.p), color=markerColor(i), shape=markerShape(i);
       drawMarker(c.catX,c.catY,shape,color,9);
       drawMarker(c.anX,c.anY,shape,color,9);
       drawMarker(c.diaX,c.diaY,shape,color,10);
@@ -344,7 +486,7 @@
     pixelText('样品 / Sample',38,62,{size:17,weight:800});
     const maxLegend=31, rowH=29;
     data.slice(0,maxLegend).forEach((r,i)=>{
-      const color=colors[Math.floor(i/4)%colors.length],shape=shapes[i%shapes.length];
+      const color=markerColor(i),shape=markerShape(i);
       // Draw marker in pixel coordinates by temporarily converting to normalized coordinates.
       const px=52,py=98+i*rowH;
       ctx.save();ctx.translate(px,py);ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();
@@ -366,12 +508,225 @@
     });
     if(data.length>maxLegend)pixelText(`… 另有 ${data.length-maxLegend} 组`,38,98+maxLegend*rowH,{size:14,color:'#53646d'});
 
-    $('#piperLegend').innerHTML=data.map((r,i)=>`<span><i style="--legend-color:${colors[Math.floor(i/4)%colors.length]}"></i><b>${i+1}</b> ${safeText(r.id)} · ${safeText(r.type)}</span>`).join('');
+    $('#piperLegend').innerHTML=data.map((r,i)=>`<span><i style="--legend-color:${markerColor(i)}"></i><b>${i+1}</b> ${safeText(r.id)} · ${safeText(r.type)}</span>`).join('');
+  }
+
+  function drawNaKMg(data) {
+    const canvas = $('#nakmgCanvas'); if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const side = 820, plotLeft = 115, baseY = 860;
+    const sx = x => plotLeft + x * side;
+    const sy = y => baseY - y * side;
+    const ink = '#111820', grid = '#c6cdd2', outline = '#111820';
+    const K0 = [0, 0], NaA = [0.5, TRI_H], Mg1 = [1, 0];
+
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,W,H);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const line = (pts, opts={}) => {
+      ctx.save(); ctx.beginPath();
+      ctx.strokeStyle = opts.color || ink;
+      ctx.lineWidth = opts.width || 1.4;
+      ctx.setLineDash(opts.dash || []);
+      pts.forEach((p,i)=> i ? ctx.lineTo(sx(p[0]),sy(p[1])) : ctx.moveTo(sx(p[0]),sy(p[1])));
+      ctx.stroke(); ctx.restore();
+    };
+    const text = (txt, x, y, opts={}) => {
+      ctx.save();
+      ctx.translate(sx(x), sy(y));
+      if (opts.rotate) ctx.rotate(rad(opts.rotate));
+      ctx.fillStyle = opts.color || ink;
+      ctx.font = `${opts.weight||500} ${opts.size||18}px ${opts.serif?'Georgia,"Times New Roman",serif':'system-ui,-apple-system,"Microsoft YaHei",sans-serif'}`;
+      ctx.textAlign = opts.align || 'center';
+      ctx.textBaseline = opts.baseline || 'middle';
+      ctx.fillText(txt,0,0); ctx.restore();
+    };
+    const pixelText = (txt,x,y,opts={}) => {
+      ctx.save(); ctx.translate(x,y); if(opts.rotate)ctx.rotate(rad(opts.rotate));
+      ctx.fillStyle=opts.color||ink;
+      ctx.font=`${opts.weight||500} ${opts.size||16}px ${opts.serif?'Georgia,"Times New Roman",serif':'system-ui,-apple-system,"Microsoft YaHei",sans-serif'}`;
+      ctx.textAlign=opts.align||'left'; ctx.textBaseline='middle';
+      ctx.fillText(txt,0,0); ctx.restore();
+    };
+    const tick = (a,b,t,len=9) => {
+      const p=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
+      const dx=b[0]-a[0],dy=b[1]-a[1]; const L=Math.hypot(dx,dy)||1;
+      const nx=-dy/L,ny=dx/L;
+      line([[p[0]-nx*len/side/2,p[1]-ny*len/side/2],[p[0]+nx*len/side/2,p[1]+ny*len/side/2]],{color:outline,width:1.3});
+    };
+    const drawMarker = (x,y,shape,color,size=8) => {
+      ctx.save();ctx.translate(sx(x),sy(y));ctx.fillStyle=color;ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();
+      const poly=(n,rot=-Math.PI/2)=>{for(let i=0;i<n;i++){const a=rot+i*2*Math.PI/n,px=Math.cos(a)*size,py=Math.sin(a)*size;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();};
+      if(shape==='circle')ctx.arc(0,0,size,0,Math.PI*2);
+      else if(shape==='square')ctx.rect(-size,-size,size*2,size*2);
+      else if(shape==='triangle')poly(3);
+      else if(shape==='down')poly(3,Math.PI/2);
+      else if(shape==='diamond'){ctx.moveTo(0,-size*1.2);ctx.lineTo(size*1.1,0);ctx.lineTo(0,size*1.2);ctx.lineTo(-size*1.1,0);ctx.closePath();}
+      else if(shape==='left'){ctx.moveTo(-size*1.2,0);ctx.lineTo(size*.9,-size);ctx.lineTo(size*.9,size);ctx.closePath();}
+      else if(shape==='right'){ctx.moveTo(size*1.2,0);ctx.lineTo(-size*.9,-size);ctx.lineTo(-size*.9,size);ctx.closePath();}
+      else if(shape==='pentagon')poly(5);
+      else if(shape==='hexagon')poly(6);
+      else if(shape==='star'){for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?size*.42:size*1.2,px=Math.cos(a)*r,py=Math.sin(a)*r;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+      else if(shape==='plus'){ctx.moveTo(-size,0);ctx.lineTo(size,0);ctx.moveTo(0,-size);ctx.lineTo(0,size);ctx.stroke();ctx.restore();return;}
+      else if(shape==='cross'){ctx.moveTo(-size,-size);ctx.lineTo(size,size);ctx.moveTo(size,-size);ctx.lineTo(-size,size);ctx.stroke();ctx.restore();return;}
+      ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();ctx.restore();
+    };
+
+    // grid
+    [0.2,0.4,0.6,0.8].forEach(f=>{
+      line([[0.5*f,TRI_H*f],[1-0.5*f,TRI_H*f]],{color:grid,width:1});
+      line([[f,0],[0.5+0.5*f,TRI_H*(1-f)]],{color:grid,width:1});
+      line([[1-f,0],[0.5-0.5*f,TRI_H*(1-f)]],{color:grid,width:1});
+    });
+
+    // Exact equilibrium curves and outline.
+    line([K0,NaA,Mg1,K0],{color:outline,width:2.8});
+    const fullCurve = NAKMG_FULL_CURVE.map(d=>[d.coord.x,d.coord.y]);
+    const lowerCurve = NAKMG_LOWER_CURVE.map(d=>[d.coord.x,d.coord.y]);
+    line(fullCurve,{color:'#31cc3e',width:4});
+    line(lowerCurve,{color:'#c51fe5',width:4});
+
+    // Isotherms: connect equal-temperature points on the two equilibrium boundaries.
+    NAKMG_ISOTHERMS.forEach(m=>{
+      const a=[m.full.coord.x,m.full.coord.y], b=[m.lower.coord.x,m.lower.coord.y];
+      line([a,b],{color:'#9aa6ad',width:1,dash:[7,7]});
+    });
+
+    // ticks and scale labels
+    for(let i=0;i<=10;i++){
+      const t=i/10;
+      tick(K0,NaA,t,i%2===0?12:7); tick(NaA,Mg1,t,i%2===0?12:7); tick(K0,Mg1,t,i%2===0?12:7);
+      if(i%2===0){
+        if(i<10) text(String(i*10), (K0[0]+(NaA[0]-K0[0])*t)-0.055, (K0[1]+(NaA[1]-K0[1])*t), {size:16, rotate:-60});
+        if(i>0) text(String(i*10), (NaA[0]+(Mg1[0]-NaA[0])*t)+0.055, (NaA[1]+(Mg1[1]-NaA[1])*t), {size:16, rotate:60});
+        text(String(100-i*10), t, -0.08, {size:16});
+      }
+    }
+
+    // axis labels
+    text('Na/1000', 0.52, TRI_H + 0.07, {size:28, serif:true});
+    text('K/100', -0.03, -0.03, {size:24, serif:true});
+    text('√Mg', 1.08, -0.03, {size:24, serif:true});
+
+    // Temperature labels on the full-equilibrium curve: display every 40 °C.
+    // Labels are offset away from the equilibrium band and automatically separated
+    // so adjacent temperature values do not overlap. Figure labels contain numbers only.
+    const placedTempLabels = [];
+    const boxesOverlap = (a,b,pad=5) => !(
+      a.right + pad < b.left || a.left - pad > b.right ||
+      a.bottom + pad < b.top || a.top - pad > b.bottom
+    );
+    ctx.save();
+    ctx.font='600 15px "Times New Roman",Times,serif';
+    NAKMG_TEMP_LABELS.forEach((m,i)=>{
+      const prev = NAKMG_FULL_CURVE.find(d=>d.tempC >= Math.max(NAKMG_TMIN,m.tempC-4)) || m.full;
+      const next = NAKMG_FULL_CURVE.find(d=>d.tempC >= Math.min(NAKMG_TMAX,m.tempC+4)) || m.full;
+      const dx = sx(next.coord.x)-sx(prev.coord.x);
+      const dy = sy(next.coord.y)-sy(prev.coord.y);
+      const L = Math.hypot(dx,dy)||1;
+      const tx = dx/L, ty = dy/L;
+
+      // Use the vector from the lower equilibrium boundary toward the full-equilibrium
+      // boundary as the preferred outward direction. This keeps text off the green curve.
+      const bx = sx(m.full.coord.x)-sx(m.lower.coord.x);
+      const by = sy(m.full.coord.y)-sy(m.lower.coord.y);
+      const BL = Math.hypot(bx,by)||1;
+      const nx = bx/BL, ny = by/BL;
+
+      let angle = Math.atan2(dy,dx)*180/Math.PI + 180;
+      // Keep all temperature text upright/readable while preserving curve orientation.
+      while (angle > 180) angle -= 360;
+      while (angle <= -180) angle += 360;
+      if (angle > 90) angle -= 180;
+      if (angle < -90) angle += 180;
+
+      const label = String(m.tempC);
+      const textW = ctx.measureText(label).width;
+      const textH = 18;
+      const ar = Math.abs(Math.cos(rad(angle))), as = Math.abs(Math.sin(rad(angle)));
+      const boxW = textW*ar + textH*as;
+      const boxH = textW*as + textH*ar;
+
+      let chosen = null;
+      const normalOffsets = [22,30,38,46,54,64,76];
+      const tangentOffsets = [0,14,-14,28,-28,42,-42];
+      for (const no of normalOffsets) {
+        for (const to of tangentOffsets) {
+          const px = sx(m.full.coord.x) + nx*no + tx*to;
+          const py = sy(m.full.coord.y) + ny*no + ty*to;
+          const box = {left:px-boxW/2, right:px+boxW/2, top:py-boxH/2, bottom:py+boxH/2};
+          const insideCanvas = box.left>8 && box.right<W-8 && box.top>8 && box.bottom<H-8;
+          if (!insideCanvas) continue;
+          if (placedTempLabels.every(b=>!boxesOverlap(box,b,6))) {
+            chosen = {px,py,box};
+            break;
+          }
+        }
+        if (chosen) break;
+      }
+      if (!chosen) {
+        const px = sx(m.full.coord.x) + nx*82;
+        const py = sy(m.full.coord.y) + ny*82;
+        chosen = {px,py,box:{left:px-boxW/2,right:px+boxW/2,top:py-boxH/2,bottom:py+boxH/2}};
+      }
+      placedTempLabels.push(chosen.box);
+      ctx.save(); ctx.translate(chosen.px,chosen.py); ctx.rotate(rad(angle));
+      ctx.fillStyle='#28343a';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(label,0,0); ctx.restore();
+    });
+    ctx.restore();
+
+    // region labels
+    text('完全平衡区', 0.50, TRI_H*0.73, {size:30, weight:700, color:'rgba(17,24,32,0.78)'});
+    text('局部平衡区', 0.50, TRI_H*0.38, {size:30, weight:700, color:'rgba(17,24,32,0.78)'});
+    text('非平衡区', 0.50, TRI_H*0.11, {size:30, weight:700, color:'rgba(17,24,32,0.78)'});
+
+    // sample points
+    data.forEach((r,i)=> drawMarker(r.nakmg.coord.x, r.nakmg.coord.y, markerShape(i), markerColor(i), 9));
+
+    // legend at right
+    pixelText('Na-K-Mg 图例', 1045, 82, {size:18, weight:800});
+    ctx.save(); ctx.strokeStyle='#31cc3e'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(1050,120); ctx.lineTo(1150,120); ctx.stroke(); ctx.restore();
+    pixelText('完全平衡线', 1185, 120, {size:18, serif:true});
+    ctx.save(); ctx.strokeStyle='#c51fe5'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(1050,160); ctx.lineTo(1150,160); ctx.stroke(); ctx.restore();
+    pixelText('局部平衡线', 1185, 160, {size:18, serif:true});
+    ctx.save(); ctx.strokeStyle='#9aa6ad'; ctx.lineWidth=1; ctx.setLineDash([7,7]); ctx.beginPath(); ctx.moveTo(1050,202); ctx.lineTo(1150,202); ctx.stroke(); ctx.restore();
+    pixelText('等温虚线：0–360℃，20℃间隔；图内温度数字：0–320，40℃间隔', 1185, 202, {size:15});
+    pixelText('完全平衡区 → 推荐 Na-K 温标', 1050, 242, {size:15});
+    pixelText('局部平衡区 → 推荐 K-Mg 温标', 1050, 269, {size:15});
+    pixelText('非平衡区 → 不直接推荐温标', 1050, 296, {size:15});
+
+    data.slice(0,18).forEach((r,i)=>{
+      const y = 350 + i*30; const x = 1062;
+      // draw pixel marker
+      const shape = markerShape(i), color = markerColor(i), s = 6;
+      ctx.save(); ctx.translate(x, y); ctx.fillStyle=color; ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath();
+      if(shape==='circle')ctx.arc(0,0,s,0,Math.PI*2);
+      else if(shape==='square')ctx.rect(-s,-s,s*2,s*2);
+      else if(shape==='triangle'){ctx.moveTo(0,-s);ctx.lineTo(s,s);ctx.lineTo(-s,s);ctx.closePath();}
+      else if(shape==='down'){ctx.moveTo(0,s);ctx.lineTo(s,-s);ctx.lineTo(-s,-s);ctx.closePath();}
+      else if(shape==='diamond'){ctx.moveTo(0,-s);ctx.lineTo(s,0);ctx.lineTo(0,s);ctx.lineTo(-s,0);ctx.closePath();}
+      else if(shape==='left'){ctx.moveTo(-s,0);ctx.lineTo(s,-s);ctx.lineTo(s,s);ctx.closePath();}
+      else if(shape==='right'){ctx.moveTo(s,0);ctx.lineTo(-s,-s);ctx.lineTo(-s,s);ctx.closePath();}
+      else if(shape==='pentagon'){for(let j=0;j<5;j++){const a=-Math.PI/2+j*2*Math.PI/5,px=Math.cos(a)*s,py=Math.sin(a)*s;j?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+      else if(shape==='hexagon'){for(let j=0;j<6;j++){const a=j*2*Math.PI/6,px=Math.cos(a)*s,py=Math.sin(a)*s;j?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+      else if(shape==='star'){for(let j=0;j<10;j++){const a=-Math.PI/2+j*Math.PI/5,rr=j%2?s*.42:s*1.15,px=Math.cos(a)*rr,py=Math.sin(a)*rr;j?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+      else if(shape==='plus'){ctx.moveTo(-s,0);ctx.lineTo(s,0);ctx.moveTo(0,-s);ctx.lineTo(0,s);ctx.stroke(); ctx.restore(); pixelText(`${clean(r.id)}  ${r.nakmg.zone}  ${fmt(r.nakmg.reservoirTemp,1)}℃`, 1080, y, {size:14}); return;}
+      else if(shape==='cross'){ctx.moveTo(-s,-s);ctx.lineTo(s,s);ctx.moveTo(s,-s);ctx.lineTo(-s,s);ctx.stroke(); ctx.restore(); pixelText(`${clean(r.id)}  ${r.nakmg.zone}  ${fmt(r.nakmg.reservoirTemp,1)}℃`, 1080, y, {size:14}); return;}
+      ctx.fill(); ctx.restore();
+      pixelText(`${clean(r.id)}  ${r.nakmg.zone}  ${fmt(r.nakmg.reservoirTemp,1)}℃`, 1080, y, {size:14});
+    });
+    if(data.length>18) pixelText(`… 另有 ${data.length-18} 组水样`, 1050, 350+18*30, {size:14, color:'#53646d'});
   }
 
   $('#addKurlovRow').addEventListener('click',()=>addKurlovRow());
   $('#calcKurlov').addEventListener('click',calculateKurlov);
-  $('#clearKurlov').addEventListener('click',()=>{kRows.innerHTML='';addKurlovRow();$('#kurlovResults').innerHTML='';$('#kurlovStatus').textContent='';drawPiper([]);});
+  $('#clearKurlov').addEventListener('click',()=>{kRows.innerHTML='';addKurlovRow();$('#kurlovResults').innerHTML='';$('#nakmgResults').innerHTML='';$('#kurlovStatus').textContent='';drawPiper([]);drawNaKMg([]);});
   $('#kurlovExample').addEventListener('click',()=>{kRows.innerHTML='';[
     {id:'GW-01',Na:18.6,K:2.1,Ca:82.4,Mg:21.8,Cl:24.6,SO4:35.2,HCO3:278,CO3:0,F:.3,NO3:7.6},
     {id:'GW-02',Na:96.2,K:4.8,Ca:34.1,Mg:12.5,Cl:118,SO4:42,HCO3:168,CO3:0,F:.5,NO3:5.1},
@@ -394,6 +749,7 @@
     kRows.innerHTML='';parsed.forEach(addKurlovRow);calculateKurlov();
   });
   $('#downloadPiper').addEventListener('click',()=>{const a=document.createElement('a');a.download='Piper_diagram.png';a.href=$('#piperCanvas').toDataURL('image/png');a.click();});
+  $('#downloadNaKMg')?.addEventListener('click',()=>{const a=document.createElement('a');a.download='Na-K-Mg_diagram.png';a.href=$('#nakmgCanvas').toDataURL('image/png');a.click();});
 
   // ---------- Profile correction: mirrors the uploaded “剖面校正表打印” ----------
   const profileRows = $('#profileRows');
@@ -588,7 +944,10 @@
     return [...thicknessRows.rows].map(r=>[clean($('[data-key="id"]',r)?.value), $('[data-key="layer"]',r)?.value, $('[data-out="trueThickness"]',r)?.textContent, $('[data-out="layerCum"]',r)?.textContent]);
   }
 
-  $('#exportKurlov')?.addEventListener('click',()=>downloadCSV('库尔洛夫计算结果.csv',[['样品','矿化度','阳离子总量','阴离子总量','误差','水化学类型','库尔洛夫式'],...kurlovComputed.map(r=>[r.id,r.M,r.catTotal,r.anTotal,r.balance,r.type,r.formula])]));
+  $('#exportKurlov')?.addEventListener('click',()=>downloadCSV('库尔洛夫计算结果.csv',[[
+    '样品','矿化度','阳离子总量','阴离子总量','误差','水化学类型','库尔洛夫式',
+    'Na/1000','K/100','√Mg','Na-K-Mg平衡区间','推荐计算公式','Na-K温标(℃)','K-Mg温标(℃)','理论热储温度(℃)','说明'
+  ],...kurlovComputed.map(r=>[r.id,r.M,r.catTotal,r.anTotal,r.balance,r.type,r.formula,r.nakmg.rawNa,r.nakmg.rawK,r.nakmg.rawMg,r.nakmg.zone,r.nakmg.recommendFormula,r.nakmg.tNaK,r.nakmg.tKMg,r.nakmg.reservoirTemp,r.nakmg.remark])]));
   $('#exportProfile')?.addEventListener('click',()=>downloadCSV('剖面校正计算结果.csv',[['导线号','ΔX','ΔY','平距','高差'],...profileRowsData()]));
   $('#exportThickness')?.addEventListener('click',()=>downloadCSV('地层厚度计算结果.csv',[['导线号','分层','真厚度','累计厚度'],...thicknessRowsData()]));
 
@@ -603,4 +962,5 @@
   addProfileRow({id:0});addProfileRow({id:1});
   addThicknessRow();
   drawPiper([]);
+  drawNaKMg([]);
 })();

@@ -19,11 +19,11 @@
   <div class="section-heading tool-intro">
     <p class="eyebrow">WEB CALCULATORS</p>
     <h2>地学数据网页计算工具</h2>
-    <p>三个计算表保持独立。库尔洛夫式下方增加 Piper 三线图；剖面校正和地层厚度模块按原 Excel 表的字段与计算关系重新实现。Excel 上传仅用于快速导入，网页本身即可直接计算。</p>
+    <p>三个计算表保持独立。库尔洛夫式模块下方同时提供 Piper 三线图与 Na-K-Mg 三角图；剖面校正和地层厚度模块按原 Excel 表的字段与计算关系重新实现。Excel 上传仅用于快速导入，网页本身即可直接计算。</p>
   </div>
 
   <div class="tool-tabs" role="tablist" aria-label="计算工具">
-    <button class="tool-tab active" type="button" data-tab="kurlov">库尔洛夫式 + Piper</button>
+    <button class="tool-tab active" type="button" data-tab="kurlov">库尔洛夫式 + 图解</button>
     <button class="tool-tab" type="button" data-tab="profile">剖面校正计算表</button>
     <button class="tool-tab" type="button" data-tab="thickness">剖面地层厚度计算表</button>
   </div>
@@ -75,11 +75,67 @@
 
     <div class="result-section piper-section">
       <div class="subhead">
-        <div><span class="tool-step">PIPER</span><h4>Piper 三线图</h4><p>采用三角形—菱形标准布局、20% 网格、50% 分区虚线、百分比刻度和多组样品图例；同一水样在三个投影区使用同一颜色与符号。</p></div>
+        <div><span class="tool-step">PIPER</span><h4>Piper 三线图</h4><p>采用三角形—菱形标准布局、20% 网格、百分比刻度和多组样品图例；同一水样在三个投影区使用同一颜色与符号。</p></div>
         <button class="tool-button ghost" id="downloadPiper" type="button">保存 PNG</button>
       </div>
       <div class="piper-wrap"><canvas id="piperCanvas" width="1500" height="1120" aria-label="Piper 三线图"></canvas></div>
       <div class="piper-legend" id="piperLegend"></div>
+    </div>
+
+    <div class="result-section nakmg-section">
+      <div class="subhead">
+        <div><span class="tool-step">Na-K-Mg</span><h4>Na-K-Mg 三角图与理论热储温度</h4><p>以 Na/1000、K/100、√Mg 的归一化值绘制 Giggenbach Na-K-Mg 三角图。根据样品所处平衡区间自动选择推荐温标：完全平衡区优先采用 Na-K 温标，局部平衡区优先采用 K-Mg 温标；非平衡区仅作定性识别，不直接给出推荐热储温度。</p></div>
+        <button class="tool-button ghost" id="downloadNaKMg" type="button">保存 PNG</button>
+      </div>
+      <div class="tool-notice formula-note"><strong>平衡曲线与温标：</strong>完全平衡线按 <code>Na=457·K^0.37·Mg^0.315</code>，平衡下限按 <code>Na=100·K^0.37·Mg^0.315</code> 自动生成；平衡曲线从 0 ℃开始绘制至 360 ℃，每 20 ℃保留一条等温虚线；温度文字从 0 ℃起每 40 ℃标注一次，最高显示至 320 ℃（不显示 360 ℃）。温度标注统一采用 Times New Roman。完全平衡区采用 Giggenbach Na-K 温标 <code>T(℃)=1390/(log10(Na/K)+1.75)-273.15</code>；局部平衡区采用 K-Mg 温标 <code>T(℃)=4410/(14-log10(K²/Mg))-273.15</code>。Na、K、Mg 均使用同一质量浓度单位（网页输入为 mg/L）。</div>
+      <div class="piper-wrap"><canvas id="nakmgCanvas" width="1500" height="980" aria-label="Na-K-Mg 三角图"></canvas></div>
+      <div class="table-scroll">
+        <table class="calc-table result-table">
+          <thead><tr><th>样品</th><th>Na/1000</th><th>K/100</th><th>√Mg</th><th>平衡区间</th><th>推荐计算公式</th><th>Na-K 温标 (℃)</th><th>K-Mg 温标 (℃)</th><th>理论热储温度 (℃)</th><th>说明</th></tr></thead>
+          <tbody id="nakmgResults"></tbody>
+        </table>
+      </div>
+
+      <div class="tool-notice formula-note nakmg-immature-note">
+        <strong>非平衡区（immature water）的处理方法：</strong>
+        Na-K-Mg 图的“非平衡区”表示水—岩反应尚未达到适合阳离子温标的平衡状态，因此 <strong>不建议直接把 Na-K 或 K-Mg 的结果作为热储温度</strong>。
+        若有 SiO₂ 数据，可改用硅温标并与地质条件、混合过程及其他温标交叉验证：
+        石英（无蒸汽损失） <code>Tq(℃)=1309/(5.19-log10(SiO₂))-273.15</code>；
+        玉髓 <code>Tch(℃)=1032/(4.69-log10(SiO₂))-273.15</code>，其中 SiO₂ 以 mg/L（或近似 ppm）计。
+        对明显混合水，还应结合硅-焓混合模型等方法，而不是强行从 Na-K-Mg 非平衡区读取热储温度。
+        <br><strong>出处：</strong>
+        Giggenbach, W.F. (1988), <em>Geothermal solute equilibria. Derivation of Na-K-Mg-Ca geoindicators</em>, Geochimica et Cosmochimica Acta 52:2749–2765,
+        <a href="https://doi.org/10.1016/0016-7037(88)90143-3" target="_blank" rel="noopener noreferrer">DOI: 10.1016/0016-7037(88)90143-3</a>；
+        Fournier, R.O. (1977), <em>Chemical geothermometers and mixing models for geothermal systems</em>, Geothermics 5:41–50,
+        <a href="https://doi.org/10.1016/0375-6505(77)90007-4" target="_blank" rel="noopener noreferrer">DOI: 10.1016/0375-6505(77)90007-4</a>。
+      </div>
+
+      <div class="tool-notice formula-note nakmg-mixing-note">
+        <strong>混合水的计算方法：</strong>
+        对由深部热水与浅层冷水形成的二端元混合水，可优先采用 <strong>硅—焓（SiO₂–enthalpy）混合模型</strong>。设冷水混合比例为 <em>X</em>，则深部热水比例为 <em>1−X</em>，同时满足热量守恒和 SiO₂ 质量守恒：
+        <br><code>Hc·X + Hh·(1−X) = Hs</code>
+        <br><code>Sic·X + Sih·(1−X) = Sis</code>
+        <br>整理后可分别得到：
+        <br><code>XH = (Hh−Hs)/(Hh−Hc)</code>
+        <br><code>XSi = (Sih−Sis)/(Sih−Sic)</code>
+        <br>其中 <em>Hc</em>、<em>Hh</em>、<em>Hs</em> 分别为浅层冷水、深部热水和地表混合泉水的比焓；<em>Sic</em>、<em>Sih</em>、<em>Sis</em> 分别为三者的 SiO₂ 浓度；<em>X</em> 为浅层冷水混合比例。实际求解时，通过改变假定的深部热水温度 <em>Th</em>，由水/蒸汽表取得 <em>Hh(Th)</em>，并由石英（或适用时玉髓）溶解度关系取得 <em>Sih(Th)</em>；当 <code>XH ≈ XSi</code> 时，对应的 <em>Th</em> 即为混合校正后的理论热储温度，深部热水比例为 <code>1−X</code>。
+        <br><br><strong>简化的保守组分二端元混合：</strong>若某组分在混合过程中近似保守（常用 Cl⁻ 作为示踪量），则有
+        <br><code>Cs = Cc·X + Ch·(1−X)</code>
+        <br><code>X = (Ch−Cs)/(Ch−Cc)</code>
+        <br>其中 <em>Cc</em>、<em>Ch</em>、<em>Cs</em> 分别为冷水、深部热水和混合水中该保守组分的浓度。该式可用于估算冷水混入比例，但只有在端元组成合理、且该组分未发生明显沉淀、吸附或挥发损失时才可靠。
+        <br><br><strong>沸腾或伴随蒸汽损失的混合水：</strong>单纯硅—焓模型可能不再适用，可采用 <strong>氯—焓（Cl–enthalpy）模型</strong>，基本二端元平衡关系为
+        <br><code>Hs = fh·Hh + (1−fh)·Hc</code>
+        <br><code>Cls = fh·Clh + (1−fh)·Clc</code>
+        <br>其中 <em>fh</em> 为热水端元比例。对发生沸腾和蒸汽分离的样品，还需结合蒸汽损失线和水/蒸汽焓值进行校正，不能仅用上式直接替代完整的氯—焓图解。
+        <br><br><strong>适用条件：</strong>硅—焓模型主要适用于非沸腾的混合热泉，并要求深部热水的 SiO₂ 原始含量受石英（或适用矿物）溶解度控制、混合前后没有显著 SiO₂ 沉淀/再溶解，且混合后的导热冷却不显著；若存在明显沸腾、蒸汽逸失或多端元混合，应优先采用氯—焓图解及其他地球化学约束综合分析。
+        <br><strong>出处：</strong>
+        Truesdell, A.H. &amp; Fournier, R.O. (1977), <em>Procedure for estimating the temperature of a hot-water component in a mixed water by using a plot of dissolved silica versus enthalpy</em>, Journal of Research of the U.S. Geological Survey 5(1):49–52，
+        <a href="https://pubs.usgs.gov/publication/70232938" target="_blank" rel="noopener noreferrer">USGS 原文</a>；
+        Fournier, R.O. (1977), <em>Chemical geothermometers and mixing models for geothermal systems</em>, Geothermics 5:41–50，
+        <a href="https://doi.org/10.1016/0375-6505(77)90007-4" target="_blank" rel="noopener noreferrer">DOI: 10.1016/0375-6505(77)90007-4</a>；
+        Fournier, R.O. (1979), <em>Geochemical and hydrologic considerations and the use of enthalpy-chloride diagrams in the prediction of underground conditions in hot-spring systems</em>, Journal of Volcanology and Geothermal Research 5:1–16，
+        <a href="https://pubs.usgs.gov/publication/70012483" target="_blank" rel="noopener noreferrer">USGS 原文</a>。
+      </div>
     </div>
   </section>
 
