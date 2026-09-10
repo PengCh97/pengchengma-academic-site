@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="库尔洛夫式、Piper三线图、剖面校正和剖面地层厚度网页计算工具。">
+  <title>地学计算工具 | Pengcheng Ma</title>
+  <link href="../styles.css" rel="stylesheet">
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="hydro-tools.js"></script>
+</head>
+<body class="tool-page">
+<header class="site-header">
+  <a class="brand" href="../index.html"><span class="brand-mark">PM</span><span><strong>Pengcheng Ma</strong><small>Geoscience Calculators</small></span></a>
+  <nav><a href="../index.html">首页</a><a href="#calculator-shell">网页计算</a></nav>
+</header>
+
+<main id="calculator-shell" class="section-shell section-block tool-shell">
+  <div class="section-heading tool-intro">
+    <p class="eyebrow">WEB CALCULATORS</p>
+    <h2>地学数据网页计算工具</h2>
+    <p>三个计算表保持独立。库尔洛夫式下方增加 Piper 三线图；剖面校正和地层厚度模块按原 Excel 表的字段与计算关系重新实现。Excel 上传仅用于快速导入，网页本身即可直接计算。</p>
+  </div>
+
+  <div class="tool-tabs" role="tablist" aria-label="计算工具">
+    <button class="tool-tab active" type="button" data-tab="kurlov">库尔洛夫式 + Piper</button>
+    <button class="tool-tab" type="button" data-tab="profile">剖面校正计算表</button>
+    <button class="tool-tab" type="button" data-tab="thickness">剖面地层厚度计算表</button>
+  </div>
+
+  <section class="tool-panel active" id="panel-kurlov" data-panel="kurlov">
+    <div class="tool-card-head">
+      <div>
+        <span class="tool-step">01</span>
+        <h3>库尔洛夫式计算</h3>
+        <p>主分析离子排列在前：Na⁺、K⁺、Ca²⁺、Mg²⁺、Cl⁻、SO₄²⁻、HCO₃⁻；其他离子统一放在后面。所有浓度均以 mg/L 输入。</p>
+      </div>
+      <div class="tool-actions compact-actions">
+        <label class="file-button">导入 Excel<input id="kurlovFile" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+        <button class="tool-button ghost" id="kurlovExample" type="button">填入示例</button>
+      </div>
+    </div>
+
+    <div class="tool-notice"><strong>Piper 数据：</strong>仅取 Ca²⁺、Mg²⁺、Na⁺+K⁺、Cl⁻、SO₄²⁻、HCO₃⁻+CO₃²⁻，分别换算为 meq% 后绘图；其他离子仅参与库尔洛夫式、电荷平衡和矿化度计算。</div>
+
+    <div class="table-scroll">
+      <table class="calc-table input-table kurlov-table" id="kurlovInputTable">
+        <thead>
+          <tr class="group-head"><th rowspan="2">样品</th><th colspan="7" class="major-group">主要离子（mg/L）</th><th colspan="7" class="minor-group">其他离子（mg/L）</th><th rowspan="2">操作</th></tr>
+          <tr>
+            <th>Na⁺</th><th>K⁺</th><th>Ca²⁺</th><th>Mg²⁺</th><th>Cl⁻</th><th>SO₄²⁻</th><th>HCO₃⁻</th>
+            <th>CO₃²⁻</th><th>Fe²⁺</th><th>Fe³⁺</th><th>Al³⁺</th><th>NH₄⁺</th><th>F⁻</th><th>NO₃⁻</th>
+          </tr>
+        </thead>
+        <tbody id="kurlovRows"></tbody>
+      </table>
+    </div>
+    <div class="tool-actions">
+      <button class="tool-button secondary" id="addKurlovRow" type="button">＋ 增加水样</button>
+      <button class="tool-button primary" id="calcKurlov" type="button">计算全部水样</button>
+      <button class="tool-button ghost" id="clearKurlov" type="button">清空</button><button class="tool-button ghost" id="exportKurlov" type="button">下载计算结果</button>
+    </div>
+    <details class="bulk-paste"><summary>从 Excel / 表格批量粘贴多组水样</summary><p>推荐列顺序：样品、Na、K、Ca、Mg、Cl、SO4、HCO3、CO3、Fe2、Fe3、Al、NH4、F、NO3（mg/L）。后面的其他离子可以省略。</p><textarea id="kurlovPaste" rows="5" placeholder="样品\tNa\tK\tCa\tMg\tCl\tSO4\tHCO3\nS1\t18.6\t2.1\t82.4\t21.8\t24.6\t35.2\t278"></textarea><button class="tool-button secondary" id="importKurlovPaste" type="button">导入粘贴数据</button></details>
+    <p class="tool-status" id="kurlovStatus" aria-live="polite"></p>
+
+    <div class="result-section">
+      <div class="subhead"><div><span class="tool-step">RESULT</span><h4>库尔洛夫式计算结果</h4></div></div>
+      <div class="table-scroll">
+        <table class="calc-table result-table">
+          <thead><tr><th>样品</th><th>矿化度 M (g/L)</th><th>Σ阳离子 (meq/L)</th><th>Σ阴离子 (meq/L)</th><th>平衡误差</th><th>水化学类型</th><th>库尔洛夫式（简式）</th></tr></thead>
+          <tbody id="kurlovResults"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="result-section piper-section">
+      <div class="subhead">
+        <div><span class="tool-step">PIPER</span><h4>Piper 三线图</h4><p>采用三角形—菱形标准布局、20% 网格、50% 分区虚线、百分比刻度和多组样品图例；同一水样在三个投影区使用同一颜色与符号。</p></div>
+        <button class="tool-button ghost" id="downloadPiper" type="button">保存 PNG</button>
+      </div>
+      <div class="piper-wrap"><canvas id="piperCanvas" width="1500" height="1120" aria-label="Piper 三线图"></canvas></div>
+      <div class="piper-legend" id="piperLegend"></div>
+    </div>
+  </section>
+
+  <section class="tool-panel" id="panel-profile" data-panel="profile">
+    <div class="tool-card-head">
+      <div>
+        <span class="tool-step">02</span>
+        <h3>地质—水文地质实测剖面校正表</h3>
+        <p>字段和计算关系按原“剖面校正表打印”实现。输入导线号、X、Y 和地形图高程，其余列自动按原表公式计算。</p>
+      </div>
+      <div class="tool-actions compact-actions"><label class="file-button">导入 Excel<input id="profileFile" type="file" accept=".xlsx,.xls,.csv" hidden></label><button class="tool-button ghost" id="profileExample" type="button">载入原表示例</button></div>
+    </div>
+    <div class="tool-notice formula-note"><strong>原表公式：</strong>ΔX=Xᵢ−Xᵢ₋₁；ΔY=Yᵢ−Yᵢ₋₁；平距=√(ΔX²+ΔY²)；α=ROUND[DEGREES(ATAN(ΔX/ΔY)),0]；理论坡角=DEGREES[ATAN(高差/平距)]；β=ROUND(理论坡角,0)；校正斜距=ROUND[平距/cosβ,0]；校正高差=校正斜距·sinβ。剖面总方向 γ 按首末点坐标同法计算。</div>
+
+    <div class="profile-summary" id="profileSummary"><span>剖面总方向 γ：—</span><span>累计平距：—</span><span>累计校正高差：—</span></div>
+
+    <div class="table-scroll wide-sheet-scroll">
+      <table class="calc-table spreadsheet-table profile-sheet-table">
+        <thead><tr>
+          <th>导线号</th><th>X</th><th>Y</th><th>方位角 α</th><th>斜距</th><th>ΔX</th><th>ΔY</th><th>平距</th><th>累计平距</th><th>高程</th><th>高差</th><th>校正高差</th><th>累计高差</th><th>校正累计高差</th><th>理论坡角</th><th>坡度角 β</th><th>cosβ</th><th>理论斜距</th><th>剖面总方向 γ</th><th>操作</th>
+        </tr></thead>
+        <tbody id="profileRows"></tbody>
+      </table>
+    </div>
+    <div class="tool-actions"><button class="tool-button secondary" id="addProfileRow" type="button">＋ 增加导线点</button><button class="tool-button primary" id="calcProfile" type="button">重新计算</button><button class="tool-button ghost" id="clearProfile" type="button">清空</button><button class="tool-button ghost" id="exportProfile" type="button">下载计算结果</button></div>
+    <p class="tool-status" id="profileStatus" aria-live="polite"></p>
+  </section>
+
+  <section class="tool-panel" id="panel-thickness" data-panel="thickness">
+    <div class="tool-card-head">
+      <div>
+        <span class="tool-step">03</span>
+        <h3>剖面地层厚度计算表</h3>
+        <p>表头、输入项和中间计算列按原 Excel 表 A–V 列展开。导线方向、斜距、坡角、岩层产状、分层位置和分层代号均可直接在网页录入。</p>
+      </div>
+      <div class="tool-actions compact-actions"><label class="file-button">导入 Excel<input id="thicknessFile" type="file" accept=".xlsx,.xls,.csv" hidden></label><button class="tool-button ghost" id="thicknessExample" type="button">载入原表示例</button></div>
+    </div>
+    <div class="tool-notice formula-note"><strong>按原工作簿现有公式复现：</strong>γ=导线方向−岩层倾向；sinα、cosβ、cosγ、cosα、sinβ 自动计算；Y=sinα·cosβ·cosγ ± cosα·sinβ。原工作簿 T 列现有单元格计算实际采用 <strong>D=L·sinβ</strong>，网页按该现有公式保持一致；分层累计厚度按同一连续分层内 |D| 累加。</div>
+
+    <div class="table-scroll wide-sheet-scroll">
+      <table class="calc-table spreadsheet-table thickness-sheet-table">
+        <thead>
+          <tr class="group-head">
+            <th rowspan="2">导线号</th><th rowspan="2">导线方向</th><th rowspan="2">导线斜距</th><th rowspan="2">累计斜距</th><th rowspan="2">分层位置</th><th rowspan="2">斜距（L）</th><th rowspan="2">坡角（β）</th><th colspan="2">岩层产状</th><th rowspan="2">倾向与剖面线夹角 γ</th><th colspan="9">Y=sinα·cosβ·cosγ ± cosα·sinβ</th><th rowspan="2">真厚度 (m)<br><small>D=L·Y</small></th><th rowspan="2">分层代号</th><th rowspan="2">分层累计厚度</th><th rowspan="2">操作</th>
+          </tr>
+          <tr><th>倾向</th><th>倾角 α</th><th>sinα</th><th>cosβ</th><th>cosγ</th><th>积</th><th>±</th><th>cosα</th><th>sinβ</th><th>积</th><th>Y</th></tr>
+        </thead>
+        <tbody id="thicknessRows"></tbody>
+      </table>
+    </div>
+    <div class="tool-actions"><button class="tool-button secondary" id="addThicknessRow" type="button">＋ 增加分段</button><button class="tool-button primary" id="calcThickness" type="button">重新计算</button><button class="tool-button ghost" id="clearThickness" type="button">清空</button><button class="tool-button ghost" id="exportThickness" type="button">下载计算结果</button></div>
+    <p class="tool-status" id="thicknessStatus" aria-live="polite"></p>
+    <div class="layer-summary" id="layerSummary"></div>
+  </section>
+
+<section class="source-download-panel"><h3>📂 原始计算表下载</h3><p>点击即可下载对应 Excel 原始计算表。</p><div class="tool-actions"><a class="tool-button secondary" href="../assets/templates/kurlov_template.xlsx" download>⬇ 库尔洛夫式计算表源文件</a><a class="tool-button secondary" href="../assets/templates/profile_template.xlsx" download>⬇ 剖面校正计算表源文件</a><a class="tool-button secondary" href="../assets/templates/thickness_template.xlsx" download>⬇ 地层厚度计算表源文件</a></div></section>
+</main>
+
+<footer class="site-footer"><div><strong>Pengcheng Ma</strong><span>Academic website · browser-side geoscience calculation tools</span></div><div class="footer-links"><a href="../index.html">返回主页</a></div></footer>
+</body>
+</html>
