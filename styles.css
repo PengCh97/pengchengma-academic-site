@@ -317,3 +317,16 @@
   }
 }
 
+/* Na-K-Mg non-equilibrium method note */
+.nakmg-immature-note {
+  margin-top: 18px;
+  line-height: 1.75;
+}
+.nakmg-immature-note code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.nakmg-immature-note a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
