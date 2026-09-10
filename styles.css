@@ -123,3 +123,197 @@
 .piper-section .subhead{align-items:center}.piper-wrap{background:#fff;padding:6px}.piper-wrap canvas{min-width:980px;max-width:none}.piper-legend{padding-bottom:4px}.piper-legend i{border-radius:2px}
 @media(max-width:900px){.piper-wrap canvas{min-width:900px}.profile-summary{display:grid;grid-template-columns:1fr 1fr}.spreadsheet-table input,.spreadsheet-table select{min-width:74px;width:82px}}
 @media(max-width:620px){.profile-summary{grid-template-columns:1fr}.piper-wrap canvas{min-width:820px}}
+
+/* =========================================================
+   Mobile responsive fix
+   - Restore navigation on phones/tablets
+   - Keep hydrochemistry modules visible and usable
+   - Make calculator tabs, tables and Piper chart mobile-friendly
+   ========================================================= */
+
+@media (max-width: 900px) {
+  /* The original stylesheet hides nav below 900px.
+     Override it here instead of deleting desktop rules. */
+  .site-header {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 10px 16px;
+  }
+
+  .site-header .brand {
+    margin-right: auto;
+    min-width: 0;
+  }
+
+  .site-header nav {
+    display: flex !important;
+    order: 3;
+    width: 100%;
+    gap: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding: 2px 0 5px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .site-header nav a {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 7px 11px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(255,255,255,.72);
+    color: var(--ink);
+    font-size: .86rem;
+    font-weight: 700;
+  }
+
+  .site-header nav a:hover,
+  .site-header nav a:focus-visible {
+    background: var(--paper);
+    color: var(--accent);
+  }
+
+  /* The header becomes taller on mobile, so do not let the
+     calculator tabs sit underneath it. */
+  .tool-tabs {
+    position: static;
+    top: auto;
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tool-panel.active {
+    display: block;
+  }
+
+  .table-scroll,
+  .wide-sheet-scroll,
+  .piper-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .piper-wrap canvas {
+    width: 900px;
+    min-width: 900px;
+    max-width: none;
+    height: auto;
+  }
+
+  .tool-card-head,
+  .subhead {
+    display: block;
+  }
+
+  .compact-actions {
+    justify-content: flex-start;
+    margin-top: 14px;
+  }
+
+  .tool-actions {
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 620px) {
+  .site-header {
+    padding: 9px 10px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
+  }
+
+  .brand strong {
+    font-size: .95rem;
+  }
+
+  .site-header nav a {
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: .81rem;
+  }
+
+  .section-shell,
+  .tool-shell {
+    width: calc(100% - 20px);
+  }
+
+  /* Show all three calculator modules clearly on a phone. */
+  .tool-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 7px;
+    padding: 8px;
+  }
+
+  .tool-tab {
+    width: 100%;
+    padding: 11px 12px;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .tool-panel {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .tool-actions,
+  .compact-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .tool-button,
+  .file-button {
+    width: 100%;
+  }
+
+  .calc-table {
+    min-width: 860px;
+  }
+
+  .kurlov-table {
+    min-width: 1480px;
+  }
+
+  .profile-sheet-table {
+    min-width: 2350px;
+  }
+
+  .thickness-sheet-table {
+    min-width: 2700px;
+  }
+
+  .piper-wrap {
+    padding: 4px;
+  }
+
+  .piper-wrap canvas {
+    width: 820px;
+    min-width: 820px;
+  }
+
+  .piper-legend {
+    min-width: 0;
+  }
+
+  .result-section {
+    margin-top: 26px;
+    padding-top: 22px;
+  }
+}
+
