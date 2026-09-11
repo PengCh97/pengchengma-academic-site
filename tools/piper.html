@@ -3,11 +3,36 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="库尔洛夫式、Piper三线图、稳定同位素补给高程、剖面校正和剖面地层厚度网页计算工具。">
-  <title>地学计算工具 | Pengcheng Ma</title>
+  <meta name="description" content="免费在线库尔洛夫式计算工具，可自动计算离子 meq/L、毫克当量百分比、水化学类型和电荷平衡误差，并绘制 Piper 三线图、离子等当量关系图、Na-K-Mg 三角图，同时支持氢氧稳定同位素与补给高程计算。">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:title" content="库尔洛夫式在线计算｜水化学类型、Piper三线图与补给高程计算">
+  <meta property="og:description" content="在线计算库尔洛夫式、离子 meq/L 和当量百分比，判定水化学类型，并绘制 Piper 三线图、Na-K-Mg 图及稳定同位素补给高程图。">
+  <meta property="og:url" content="https://pengchengma.com/tools/piper.html">
+  <title>库尔洛夫式在线计算｜水化学类型、Piper三线图与补给高程计算</title>
+  <link rel="canonical" href="https://pengchengma.com/tools/piper.html">
   <link href="../styles.css" rel="stylesheet">
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="hydro-tools.js"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "库尔洛夫式在线计算与水化学分析工具",
+    "url": "https://pengchengma.com/tools/piper.html",
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Web browser",
+    "isAccessibleForFree": true,
+    "inLanguage": "zh-CN",
+    "description": "在线计算库尔洛夫式、离子 meq/L 和毫克当量百分比，判定水化学类型并绘制 Piper 三线图、主要离子等当量关系图、Na-K-Mg 三角图，同时支持稳定同位素补给高程计算。",
+    "author": {
+      "@type": "Person",
+      "name": "Pengcheng Ma",
+      "url": "https://pengchengma.com/"
+    }
+  }
+  </script>
 </head>
 <body class="tool-page">
 <header class="site-header">
@@ -18,8 +43,12 @@
 <main id="calculator-shell" class="section-shell section-block tool-shell">
   <div class="section-heading tool-intro">
     <p class="eyebrow">WEB CALCULATORS</p>
-    <h2>地学数据网页计算工具</h2>
-    <p>四个计算板块保持独立。库尔洛夫式模块下方同时提供 Piper 三线图、主要离子等当量关系图与 Na-K-Mg 三角图；新增的稳定同位素模块用于 δ¹⁸O–δD 关系图、补给高程估算与补给源判读；剖面校正和地层厚度模块按原 Excel 表的字段与计算关系重新实现。Excel 上传仅用于快速导入，网页本身即可直接计算。</p>
+    <h1>库尔洛夫式在线计算与水化学分析工具</h1>
+    <p>免费在线完成库尔洛夫式计算与地下水水化学分析：输入离子浓度后自动换算 meq/L 和毫克当量百分比，判定水化学类型与电荷平衡误差，并输出 Piper 三线图、主要离子等当量关系图和 Na-K-Mg 三角图；稳定同位素模块可绘制 δ¹⁸O–δD 关系图并估算补给高程。剖面校正和地层厚度模块按原 Excel 表的字段与计算关系实现，Excel 上传仅用于快速导入。</p>
+  </div>
+
+  <div class="tool-search-summary" aria-label="工具功能说明">
+    <strong>适用内容：</strong>库尔洛夫式计算、meq/L 换算、离子当量百分比、水化学类型判定、Piper 三线图在线绘制、Na-K-Mg 地热温标判读，以及 δ¹⁸O–δD 稳定同位素补给高程计算。全部计算在浏览器本地完成。
   </div>
 
   <div class="tool-tabs" role="tablist" aria-label="计算工具">
@@ -265,6 +294,7 @@
             <label>截距 b (‰)<input id="customElevationIntercept" type="number" step="any" placeholder="例如 -40"></label>
           </div>
           <p class="setting-formula" id="customElevationFormulaText">当地公式：δD = a × ALT + b；反算 ALT = (δD − b) / a。请录入研究区实测降水、泉水或地下水建立的局地回归系数。</p>
+          <p class="setting-formula"><strong>符号说明：</strong>ALT 为海拔高度（Altitude），单位为 m。</p>
         </div>
       </div>
     </div>
@@ -309,7 +339,7 @@
       <br>3. 中国同位素水文学文献中还广泛使用 <code>δD = 7.9δ¹⁸O + 8.2</code> 作为全国尺度参考关系；Zhang &amp; Wang (2016) 对中国降水稳定同位素研究及区域大气降水线进行了综述。<a href="https://doi.org/10.1007/s11442-016-1307-y" target="_blank" rel="noopener noreferrer">DOI: 10.1007/s11442-016-1307-y</a>
       <br>4. Poage &amp; Chamberlain (2001) 汇编全球山地研究，除部分特殊区外，δ¹⁸O 随高程升高的平均经验梯度约为 −0.28‰/100 m；它是<strong>梯度</strong>而不是绝对高程截距，因此计算绝对补给高程必须有当地参考点。<a href="https://doi.org/10.2475/ajs.301.1.1" target="_blank" rel="noopener noreferrer">DOI: 10.2475/ajs.301.1.1</a>
       <br>5. Jasechko (2019) 的同位素水文地质综述指出，补给高程估算应优先建立当地降水同位素—高程关系；常用形式为 <code>H = h + (δG − δP)/m</code>。蒸发会使地下水偏离降水线并降低 d-excess，因此受明显蒸发影响的样品不宜直接用未校正的 δ¹⁸O 反算高程。<a href="https://doi.org/10.1029/2018RG000627" target="_blank" rel="noopener noreferrer">DOI: 10.1029/2018RG000627</a>
-      <br><strong>局地高程公式：</strong>自定义模型直接采用 <code>δ = a·ALT + b</code>，其中可选择 δD 或 δ¹⁸O，反算 <code>ALT = (δ − b)/a</code>。局地回归是补给高程估算的优先方案，使用时应同时报告回归样本范围、R²、季节/降水量加权方式及适用高程区间。
+      <br><strong>局地高程公式：</strong>自定义模型直接采用 <code>δ = a·ALT + b</code>，其中可选择 δD 或 δ¹⁸O，<strong>ALT 为海拔高度（Altitude，m）</strong>，反算 <code>ALT = (δ − b)/a</code>。局地回归是补给高程估算的优先方案，使用时应同时报告回归样本范围、R²、季节/降水量加权方式及适用高程区间。
       <br><strong>自动判读阈值：</strong>网页默认把样品相对所选降水线的垂向残差 |Δ| ≤ 5‰ 归为“降水线附近”。该数值只是批量显示阈值，可在上方自行修改，并非文献规定的统一水文地球化学边界。
     </div>
   </section>

@@ -17,11 +17,32 @@
     return Math.sign(v || 1) * Math.round(Math.abs(v) * p + Number.EPSILON) / p;
   };
 
-  // ---------- tabs ----------
-  $$('.tool-tab').forEach(btn => btn.addEventListener('click', () => {
-    $$('.tool-tab').forEach(b => b.classList.toggle('active', b === btn));
-    $$('.tool-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === btn.dataset.tab));
-  }));
+  // ---------- tabs / direct links ----------
+  const TOOL_TABS = ['kurlov','isotope','profile','thickness'];
+  function activateToolTab(tabName, opts = {}) {
+    if (!TOOL_TABS.includes(tabName)) return false;
+    const btn = $(`.tool-tab[data-tab="${tabName}"]`);
+    const panel = $(`.tool-panel[data-panel="${tabName}"]`);
+    if (!btn || !panel) return false;
+    $$('.tool-tab').forEach(b => {
+      const active = b === btn;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    $$('.tool-panel').forEach(p => p.classList.toggle('active', p === panel));
+    if (opts.updateHash && history.replaceState) history.replaceState(null, '', `#${tabName}`);
+    if (opts.scroll) requestAnimationFrame(() => panel.scrollIntoView({behavior: opts.smooth === false ? 'auto' : 'smooth', block:'start'}));
+    return true;
+  }
+  function tabFromHash() {
+    const hash = decodeURIComponent(location.hash || '').replace(/^#/, '').replace(/^panel-/, '');
+    return TOOL_TABS.includes(hash) ? hash : '';
+  }
+  $$('.tool-tab').forEach(btn => btn.addEventListener('click', () => activateToolTab(btn.dataset.tab, {updateHash:true, scroll:true})));
+  window.addEventListener('hashchange', () => {
+    const tab = tabFromHash();
+    if (tab) activateToolTab(tab, {scroll:true});
+  });
 
   function editableCell(value, key, opts = {}) {
     const type = opts.type || 'number';
@@ -1101,7 +1122,7 @@
     for(let y=ymin,i=0;y<=ymax+ystep*.2&&i<50;y+=ystep,i++){
       const yy=py(y);ctx.beginPath();ctx.moveTo(m.l-9,yy);ctx.lineTo(m.l,yy);ctx.stroke();ctx.fillText(Number.isInteger(y)?String(y):y.toFixed(1),m.l-14,yy);
     }
-    ctx.save();ctx.font='28px "Times New Roman","Noto Serif SC",serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('δ¹⁸O (‰)',m.l+(W-m.l-m.r)/2,H-35);ctx.translate(36,m.t+(H-m.t-m.b)/2);ctx.rotate(-Math.PI/2);ctx.fillText('δD / δ²H (‰)',0,0);ctx.restore();
+    ctx.save();ctx.font='28px "Times New Roman","Noto Serif SC",serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('△ δ¹⁸O (‰)',m.l+(W-m.l-m.r)/2,H-35);ctx.translate(36,m.t+(H-m.t-m.b)/2);ctx.rotate(-Math.PI/2);ctx.fillText('△ δD / δ²H (‰)',0,0);ctx.restore();
     if(Number.isFinite(line.a)&&Number.isFinite(line.b)){
       ctx.save();ctx.strokeStyle='#777';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px(xmin),py(line.a*xmin+line.b));ctx.lineTo(px(xmax),py(line.a*xmax+line.b));ctx.stroke();ctx.restore();
     }
@@ -1407,4 +1428,6 @@
   drawIonDissolution([]);
   drawNaKMg([]);
   drawIsotope([]);
+  const initialTab = tabFromHash();
+  if (initialTab) setTimeout(() => activateToolTab(initialTab, {scroll:true, smooth:false}), 0);
 })();
