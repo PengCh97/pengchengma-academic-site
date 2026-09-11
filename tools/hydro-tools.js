@@ -93,43 +93,80 @@
     }).filter(o => kFields.some(k => o[k] > 0));
   }
   function meq(mg, def) { return mg / def.mol * def.charge; }
+
+  // ---------- Major-ion equiline diagnostics ----------
+  // The 1:1 comparison must use equivalent concentrations (meq/L), not mg/L.
+  // A ±10% ratio band is used only for automated visual classification; it is not a
+  // universal geochemical boundary and should be checked against geology and other tracers.
+  const EQUILINE_RATIO_LOW = 0.90;
+  const EQUILINE_RATIO_HIGH = 1.10;
+
+  function equilinePosition(y, x) {
+    if (!(x > 0) && !(y > 0)) return {key:'none', label:'无有效数据', ratio:NaN};
+    if (!(x > 0)) return {key:'above', label:'1:1 线上方', ratio:Infinity};
+    const ratio = y / x;
+    if (ratio >= EQUILINE_RATIO_LOW && ratio <= EQUILINE_RATIO_HIGH) return {key:'near', label:'1:1 线附近', ratio};
+    return ratio > EQUILINE_RATIO_HIGH
+      ? {key:'above', label:'1:1 线上方', ratio}
+      : {key:'below', label:'1:1 线下方', ratio};
+  }
+
+  function nakClExplanation(pos) {
+    if (pos.key === 'near') return 'Na⁺+K⁺ 与 Cl⁻ 的当量接近平衡；若 K⁺贡献较小，符合岩盐（NaCl）等氯化物盐溶解的化学计量特征，但混合过程也可能产生相似关系。';
+    if (pos.key === 'above') return 'Na⁺+K⁺ 相对 Cl⁻ 过量，通常提示 Na/K 硅酸盐风化和/或阳离子交换（溶液中的 Ca、Mg 被交换位点吸附、Na 释放入水）对碱金属有贡献。';
+    if (pos.key === 'below') return 'Cl⁻ 相对 Na⁺+K⁺ 过量，需考虑额外 Cl⁻ 来源（如咸水/海水混合、蒸发盐或人为输入）及/或反向阳离子交换造成的 Na 亏损；仅凭该图不能唯一判定机制。';
+    return '缺少可用于判读的 Na、K 或 Cl 当量数据。';
+  }
+
+  function caMgAnionExplanation(pos) {
+    if (pos.key === 'near') return 'Ca²⁺+Mg²⁺ 与 HCO₃⁻+SO₄²⁻ 的当量近似平衡，符合方解石/白云石与石膏/硬石膏等碳酸盐—硫酸盐矿物溶解的总体化学计量特征。';
+    if (pos.key === 'above') return 'Ca²⁺+Mg²⁺ 相对 HCO₃⁻+SO₄²⁻ 过量，更常指向反向阳离子交换释放 Ca/Mg，或 Ca/Mg 由 Cl⁻、NO₃⁻ 等其他阴离子配平；不能简单等同于“碳酸盐溶解增强”。';
+    if (pos.key === 'below') return 'HCO₃⁻+SO₄²⁻ 相对 Ca²⁺+Mg²⁺ 过量，常见于阳离子交换消耗 Ca/Mg 并释放 Na，和/或 Na/K 硅酸盐风化产生 HCO₃⁻ 且由 Na/K 配平；附加 SO₄²⁻ 来源也可能使点位向右偏移。';
+    return '缺少可用于判读的 Ca、Mg、HCO₃ 或 SO₄ 当量数据。';
+  }
+
+  function ionDissolutionDiagnostic(ionMeq) {
+    const nak = ionMeq.Na + ionMeq.K;
+    const cl = ionMeq.Cl;
+    const caMg = ionMeq.Ca + ionMeq.Mg;
+    const hco3so4 = ionMeq.HCO3 + ionMeq.SO4;
+    const nakCl = equilinePosition(nak, cl);
+    const caMgAn = equilinePosition(caMg, hco3so4);
+    return {
+      nak, cl, caMg, hco3so4,
+      nakCl: {...nakCl, explanation:nakClExplanation(nakCl)},
+      caMgAn: {...caMgAn, explanation:caMgAnionExplanation(caMgAn)}
+    };
+  }
   function kurlovFormula(sample, ionMeq, catTotal, anTotal) {
     const cats = kFields.filter(k => ionDefs[k].group === 'cat')
       .map(k => [k, catTotal ? ionMeq[k]/catTotal*100 : 0])
-      .filter(x => x[1] >= 25).sort((a,b)=>b[1]-a[1]);
+      .filter(x => x[1] >= HYDRO_TYPE_THRESHOLD).sort((a,b)=>b[1]-a[1]);
     const ans = kFields.filter(k => ionDefs[k].group === 'an')
       .map(k => [k, anTotal ? ionMeq[k]/anTotal*100 : 0])
-      .filter(x => x[1] >= 25).sort((a,b)=>b[1]-a[1]);
+      .filter(x => x[1] >= HYDRO_TYPE_THRESHOLD).sort((a,b)=>b[1]-a[1]);
     const render = arr => arr.length ? arr.map(([k,p]) => `${ionDefs[k].label}${Math.round(p)}`).join('·') : '混合型';
     const M = kFields.reduce((s,k)=>s+sample[k],0)/1000;
     return `M${M.toFixed(3)}  ${render(ans)} / ${render(cats)}`;
   }
-  // 水化学类型判别：Na、K 分开；HCO3、CO3 分开。
-  // 判别显示时不带离子价态；同类离子之间用居中的实心原点“·”连接，
-  // 阳离子与阴离子之间用短横线“-”连接，例如：Ca·Mg-HCO3型。
-  function hydroType(p) {
-    const c = [
-      ['Ca', p.Ca],
-      ['Mg', p.Mg],
-      ['Na', p.Na],
-      ['K', p.K]
-    ].sort((a,b)=>b[1]-a[1]);
-
-    const a = [
-      ['HCO3', p.HCO3],
-      ['CO3', p.CO3],
-      ['SO4', p.SO4],
-      ['Cl', p.Cl]
-    ].sort((a,b)=>b[1]-a[1]);
-
-    const pick = arr => {
-      if (arr[0][1] >= 50) return arr[0][0];
-      const majors = arr.filter(x => x[1] >= 25).map(x=>x[0]);
-      if (majors.length) return majors.join('·');
-      return arr.slice(0, 2).map(x => x[0]).join('·');
+  // 水化学类型判别：按全部已输入阳/阴离子的当量百分比判定。
+  // 规则：分别在总阳离子、总阴离子中筛选当量百分比 >= 25% 的离子，
+  // 所有达到或超过阈值的离子都必须显示；即使某一离子 > 50%，也不能隐藏其他 >= 25% 的离子。
+  const HYDRO_TYPE_THRESHOLD = 25;
+  const hydroTypeLabels = {
+    Na:'Na', K:'K', Ca:'Ca', Mg:'Mg', Fe2:'Fe²⁺', Fe3:'Fe³⁺', Al:'Al³⁺', NH4:'NH₄⁺',
+    Cl:'Cl', SO4:'SO₄', HCO3:'HCO₃', CO3:'CO₃', F:'F', NO3:'NO₃'
+  };
+  function hydroType(ionPercent) {
+    const pickGroup = group => {
+      const selected = kFields
+        .filter(k => ionDefs[k].group === group)
+        .map(k => [k, ionPercent[k] || 0])
+        .filter(([,pct]) => pct >= HYDRO_TYPE_THRESHOLD)
+        .sort((a,b) => b[1] - a[1]);
+      return selected.length ? selected.map(([k]) => hydroTypeLabels[k] || ionDefs[k].label).join('·') : '混合';
     };
-
-    return `${pick(c)}-${pick(a)}型`;
+    return `${pickGroup('cat')}-${pickGroup('an')}型`;
   }
   function nakmgFractions(sample) {
     const rawNa = Math.max(0, sample.Na) / 1000;
@@ -169,6 +206,13 @@
     const balance = (catTotal + anTotal) ? (catTotal-anTotal)/(catTotal+anTotal)*100 : NaN;
     const majorCat = ionMeq.Ca + ionMeq.Mg + ionMeq.Na + ionMeq.K;
     const majorAn = ionMeq.HCO3 + ionMeq.CO3 + ionMeq.Cl + ionMeq.SO4;
+    // ionPercent：各离子占“全部已输入同号离子总当量”的百分比，用于库尔洛夫式与水化学类型判定。
+    // p：仅保留 Piper 图所需的主要离子相对百分比，其分母仍为 Piper 主要离子之和。
+    const ionPercent = {};
+    kFields.forEach(k => {
+      const total = ionDefs[k].group === 'cat' ? catTotal : anTotal;
+      ionPercent[k] = total ? ionMeq[k] / total * 100 : 0;
+    });
     const p = {
       Ca: majorCat ? ionMeq.Ca/majorCat*100 : 0,
       Mg: majorCat ? ionMeq.Mg/majorCat*100 : 0,
@@ -207,10 +251,12 @@
       remark = Number.isFinite(tKMg) ? '优先采用 K-Mg 温标估算理论热储温度。' : 'K 或 Mg 数据不足，无法计算 K-Mg 温标。';
     }
 
+    const ionDiagnostic = ionDissolutionDiagnostic(ionMeq);
+
     return {
-      ...sample, ionMeq, catTotal, anTotal, balance, p,
+      ...sample, ionMeq, ionPercent, catTotal, anTotal, balance, p, ionDiagnostic,
       M: kFields.reduce((s,k)=>s+sample[k],0)/1000,
-      type: hydroType(p),
+      type: hydroType(ionPercent),
       formula: kurlovFormula(sample, ionMeq, catTotal, anTotal),
       nakmg: {
         ...nk,
@@ -230,14 +276,27 @@
     if (!rows.length) {
       status.textContent = '请至少输入一组有效的离子浓度。';
       $('#kurlovResults').innerHTML='';
+      if ($('#kurlovIonDetails')) $('#kurlovIonDetails').innerHTML='';
       $('#nakmgResults').innerHTML='';
-      kurlovComputed=[]; drawPiper([]); drawNaKMg([]); return;
+      $('#ionDissolutionResults').innerHTML='';
+      kurlovComputed=[]; drawPiper([]); drawIonDissolution([]); drawNaKMg([]); return;
     }
     kurlovComputed = rows.map(computeKurlov);
     $('#kurlovResults').innerHTML = kurlovComputed.map(r => `<tr><td>${safeText(r.id)}</td><td>${fmt(r.M,3)}</td><td>${fmt(r.catTotal,3)}</td><td>${fmt(r.anTotal,3)}</td><td class="${Math.abs(r.balance)>5?'warn-cell':'ok-cell'}">${fmt(r.balance,2)}%</td><td>${safeText(r.type)}</td><td class="formula-cell">${safeText(r.formula)}</td></tr>`).join('');
+    const ionDetailBody = $('#kurlovIonDetails');
+    if (ionDetailBody) {
+      ionDetailBody.innerHTML = kurlovComputed.map(r => `<tr><td>${safeText(r.id)}</td>${kFields.map(k => `<td>${fmt(r.ionMeq[k],3)}</td><td class="${r.ionPercent[k] >= HYDRO_TYPE_THRESHOLD ? 'major-percent-cell' : ''}">${fmt(r.ionPercent[k],2)}%</td>`).join('')}</tr>`).join('');
+    }
     $('#nakmgResults').innerHTML = kurlovComputed.map(r => `<tr><td>${safeText(r.id)}</td><td>${fmt(r.nakmg.rawNa,4)}</td><td>${fmt(r.nakmg.rawK,4)}</td><td>${fmt(r.nakmg.rawMg,4)}</td><td>${safeText(r.nakmg.zone)}</td><td>${safeText(r.nakmg.recommendFormula)}</td><td>${fmt(r.nakmg.tNaK,2)}</td><td>${fmt(r.nakmg.tKMg,2)}</td><td>${fmt(r.nakmg.reservoirTemp,2)}</td><td>${safeText(r.nakmg.remark)}</td></tr>`).join('');
-    status.textContent = `已计算 ${kurlovComputed.length} 组水样；Piper 三线图与 Na-K-Mg 三角图已同步更新。`;
+    $('#ionDissolutionResults').innerHTML = kurlovComputed.map(r => {
+      const d = r.ionDiagnostic;
+      const ratio1 = Number.isFinite(d.nakCl.ratio) ? fmt(d.nakCl.ratio,2) : (d.nakCl.ratio === Infinity ? '∞' : '—');
+      const ratio2 = Number.isFinite(d.caMgAn.ratio) ? fmt(d.caMgAn.ratio,2) : (d.caMgAn.ratio === Infinity ? '∞' : '—');
+      return `<tr><td>${safeText(r.id)}</td><td>${fmt(d.cl,3)}</td><td>${fmt(d.nak,3)}</td><td>${ratio1}</td><td>${safeText(d.nakCl.label)}</td><td class="ion-explain-cell">${safeText(d.nakCl.explanation)}</td><td>${fmt(d.hco3so4,3)}</td><td>${fmt(d.caMg,3)}</td><td>${ratio2}</td><td>${safeText(d.caMgAn.label)}</td><td class="ion-explain-cell">${safeText(d.caMgAn.explanation)}</td></tr>`;
+    }).join('');
+    status.textContent = `已计算 ${kurlovComputed.length} 组水样；Piper 三线图、离子等当量关系图与 Na-K-Mg 三角图已同步更新。`;
     drawPiper(kurlovComputed);
+    drawIonDissolution(kurlovComputed);
     drawNaKMg(kurlovComputed);
   }
 
@@ -253,6 +312,112 @@
   const MARKER_SHAPES = ['square','circle','triangle','diamond','left','right','pentagon','star','plus','cross','down','hexagon'];
   const markerColor = i => MARKER_COLORS[Math.floor(i/4)%MARKER_COLORS.length];
   const markerShape = i => MARKER_SHAPES[i%MARKER_SHAPES.length];
+
+  function drawMarkerPixel(ctx, x, y, i, size = 7) {
+    const shape = markerShape(i), color = markerColor(i), s = size;
+    ctx.save(); ctx.translate(x, y); ctx.fillStyle=color; ctx.strokeStyle=color; ctx.lineWidth=2; ctx.beginPath();
+    if(shape==='circle')ctx.arc(0,0,s,0,Math.PI*2);
+    else if(shape==='square')ctx.rect(-s,-s,s*2,s*2);
+    else if(shape==='triangle'){ctx.moveTo(0,-s);ctx.lineTo(s,s);ctx.lineTo(-s,s);ctx.closePath();}
+    else if(shape==='down'){ctx.moveTo(0,s);ctx.lineTo(s,-s);ctx.lineTo(-s,-s);ctx.closePath();}
+    else if(shape==='diamond'){ctx.moveTo(0,-s);ctx.lineTo(s,0);ctx.lineTo(0,s);ctx.lineTo(-s,0);ctx.closePath();}
+    else if(shape==='left'){ctx.moveTo(-s,0);ctx.lineTo(s,-s);ctx.lineTo(s,s);ctx.closePath();}
+    else if(shape==='right'){ctx.moveTo(s,0);ctx.lineTo(-s,-s);ctx.lineTo(-s,s);ctx.closePath();}
+    else if(shape==='pentagon'){for(let j=0;j<5;j++){const a=-Math.PI/2+j*2*Math.PI/5,px=Math.cos(a)*s,py=Math.sin(a)*s;j?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+    else if(shape==='hexagon'){for(let j=0;j<6;j++){const a=j*2*Math.PI/6,px=Math.cos(a)*s,py=Math.sin(a)*s;j?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+    else if(shape==='star'){for(let j=0;j<10;j++){const a=-Math.PI/2+j*Math.PI/5,rr=j%2?s*.42:s*1.15,px=Math.cos(a)*rr,py=Math.sin(a)*rr;j?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();}
+    else if(shape==='plus'){ctx.moveTo(-s,0);ctx.lineTo(s,0);ctx.moveTo(0,-s);ctx.lineTo(0,s);ctx.stroke();ctx.restore();return;}
+    else if(shape==='cross'){ctx.moveTo(-s,-s);ctx.lineTo(s,s);ctx.moveTo(s,-s);ctx.lineTo(-s,s);ctx.stroke();ctx.restore();return;}
+    ctx.fill(); ctx.restore();
+  }
+
+  function niceAxisMax(value) {
+    if (!(value > 0)) return 10;
+    const raw = value * 1.04;
+    const exp = 10 ** Math.floor(Math.log10(raw));
+    const f = raw / exp;
+    const candidates = [1, 2, 2.5, 4, 5, 8, 10];
+    const picked = candidates.find(v => f <= v) || 10;
+    return picked * exp;
+  }
+
+  function drawIonDissolution(data) {
+    const canvas = $('#ionDissolutionCanvas'); if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+    ctx.lineCap='round'; ctx.lineJoin='round';
+
+    const panels = [
+      {
+        x:105, y:55, w:560, h:555,
+        xLabel:'Cl⁻ (meq/L)', yLabel:'Na⁺ + K⁺ (meq/L)',
+        getX:r=>r.ionDiagnostic.cl, getY:r=>r.ionDiagnostic.nak,
+        caption:'(a) Na⁺ + K⁺ — Cl⁻'
+      },
+      {
+        x:840, y:55, w:560, h:555,
+        xLabel:'HCO₃⁻ + SO₄²⁻ (meq/L)', yLabel:'Ca²⁺ + Mg²⁺ (meq/L)',
+        getX:r=>r.ionDiagnostic.hco3so4, getY:r=>r.ionDiagnostic.caMg,
+        caption:'(b) Ca²⁺ + Mg²⁺ — HCO₃⁻ + SO₄²⁻'
+      }
+    ];
+
+    const drawText = (txt,x,y,opts={}) => {
+      ctx.save(); ctx.translate(x,y); if(opts.rotate)ctx.rotate(opts.rotate);
+      ctx.fillStyle=opts.color||'#172027';
+      ctx.font=`${opts.weight||500} ${opts.size||17}px ${opts.serif?'Georgia,"Times New Roman",serif':'system-ui,-apple-system,"Microsoft YaHei",sans-serif'}`;
+      ctx.textAlign=opts.align||'center'; ctx.textBaseline=opts.baseline||'middle'; ctx.fillText(txt,0,0); ctx.restore();
+    };
+
+    panels.forEach(panel => {
+      const maxValue = data.length ? Math.max(...data.flatMap(r=>[panel.getX(r),panel.getY(r)]).filter(Number.isFinite), 0) : 0;
+      const axisMax = niceAxisMax(maxValue);
+      const sx = v => panel.x + (v/axisMax)*panel.w;
+      const sy = v => panel.y + panel.h - (v/axisMax)*panel.h;
+
+      // axes
+      ctx.save(); ctx.strokeStyle='#101820'; ctx.lineWidth=2;
+      ctx.strokeRect(panel.x,panel.y,panel.w,panel.h); ctx.restore();
+
+      // ticks and labels
+      for(let k=0;k<=5;k++){
+        const v=axisMax*k/5;
+        const xp=sx(v), yp=sy(v);
+        ctx.save();ctx.strokeStyle='#101820';ctx.lineWidth=1.4;
+        ctx.beginPath();ctx.moveTo(xp,panel.y+panel.h);ctx.lineTo(xp,panel.y+panel.h+8);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(panel.x-8,yp);ctx.lineTo(panel.x,yp);ctx.stroke();ctx.restore();
+        const digits = axisMax < 2 ? 2 : axisMax < 10 ? 1 : 0;
+        drawText(v.toFixed(digits),xp,panel.y+panel.h+28,{size:14});
+        drawText(v.toFixed(digits),panel.x-15,yp,{size:14,align:'right'});
+      }
+
+      // 1:1 equiline
+      ctx.save();ctx.strokeStyle='#5b6368';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(sx(0),sy(0));ctx.lineTo(sx(axisMax),sy(axisMax));ctx.stroke();ctx.restore();
+      const lx=sx(axisMax*0.53), ly=sy(axisMax*0.53);
+      drawText('1:1 等当量线',lx,ly-13,{size:15,rotate:-Math.atan2(panel.h,panel.w),color:'#4d565b'});
+
+      data.forEach((r,i)=>{
+        const x=panel.getX(r),y=panel.getY(r);
+        if(Number.isFinite(x)&&Number.isFinite(y)) drawMarkerPixel(ctx,sx(x),sy(y),i,7);
+      });
+
+      drawText(panel.xLabel,panel.x+panel.w/2,panel.y+panel.h+62,{size:19,serif:true});
+      drawText(panel.yLabel,panel.x-70,panel.y+panel.h/2,{size:19,serif:true,rotate:-Math.PI/2});
+      drawText(panel.caption,panel.x+panel.w/2,26,{size:18,weight:700});
+    });
+
+    // Shared legend; samples keep the same marker in both panels.
+    const maxLegend = 12;
+    const items = data.slice(0,maxLegend);
+    const cols = 6, cellW = 210, startX = 115, startY = 735;
+    items.forEach((r,i)=>{
+      const row=Math.floor(i/cols),col=i%cols,x=startX+col*cellW,y=startY+row*34;
+      drawMarkerPixel(ctx,x,y,i,6);
+      drawText(clean(r.id),x+14,y,{size:14,align:'left'});
+    });
+    if(data.length>maxLegend) drawText(`… 另有 ${data.length-maxLegend} 组水样`,startX,startY+70,{size:14,align:'left',color:'#5f6f77'});
+  }
 
   function nakmgCoordinates(p) {
     const na = p.Na / 100;
@@ -726,7 +891,7 @@
 
   $('#addKurlovRow').addEventListener('click',()=>addKurlovRow());
   $('#calcKurlov').addEventListener('click',calculateKurlov);
-  $('#clearKurlov').addEventListener('click',()=>{kRows.innerHTML='';addKurlovRow();$('#kurlovResults').innerHTML='';$('#nakmgResults').innerHTML='';$('#kurlovStatus').textContent='';drawPiper([]);drawNaKMg([]);});
+  $('#clearKurlov').addEventListener('click',()=>{kRows.innerHTML='';addKurlovRow();$('#kurlovResults').innerHTML='';$('#nakmgResults').innerHTML='';$('#ionDissolutionResults').innerHTML='';$('#kurlovStatus').textContent='';drawPiper([]);drawIonDissolution([]);drawNaKMg([]);});
   $('#kurlovExample').addEventListener('click',()=>{kRows.innerHTML='';[
     {id:'GW-01',Na:18.6,K:2.1,Ca:82.4,Mg:21.8,Cl:24.6,SO4:35.2,HCO3:278,CO3:0,F:.3,NO3:7.6},
     {id:'GW-02',Na:96.2,K:4.8,Ca:34.1,Mg:12.5,Cl:118,SO4:42,HCO3:168,CO3:0,F:.5,NO3:5.1},
@@ -749,7 +914,271 @@
     kRows.innerHTML='';parsed.forEach(addKurlovRow);calculateKurlov();
   });
   $('#downloadPiper').addEventListener('click',()=>{const a=document.createElement('a');a.download='Piper_diagram.png';a.href=$('#piperCanvas').toDataURL('image/png');a.click();});
+  $('#downloadIonDissolution')?.addEventListener('click',()=>{const a=document.createElement('a');a.download='Ion_equiline_diagnostics.png';a.href=$('#ionDissolutionCanvas').toDataURL('image/png');a.click();});
   $('#downloadNaKMg')?.addEventListener('click',()=>{const a=document.createElement('a');a.download='Na-K-Mg_diagram.png';a.href=$('#nakmgCanvas').toDataURL('image/png');a.click();});
+
+  // ---------- Stable isotope recharge elevation ----------
+  const isotopeRows = $('#isotopeRows');
+  let isotopeComputed = [];
+  const METEORIC_LINE_PRESETS = {
+    china2014: {name:'中国 CHNIP 大气降水线（Liu et al., 2014）', a:7.48, b:1.01},
+    china1983: {name:'中国常用全国大气降水线（7.9δ¹⁸O+8.2）', a:7.9, b:8.2},
+    global: {name:'全球大气降水线 GMWL（Craig, 1961）', a:8, b:10}
+  };
+
+  function addIsotopeRow(data={}) {
+    const tr=document.createElement('tr');
+    const id=data.id ?? `ISO-${isotopeRows.children.length+1}`;
+    tr.innerHTML=`<td>${editableCell(id,'id',{type:'text',label:'样品编号'})}</td>`+
+      `<td>${editableCell(data.o18??'','o18',{label:'δ18O ‰'})}</td>`+
+      `<td>${editableCell(data.d??'','d',{label:'δD ‰'})}</td>`+
+      `<td>${editableCell(data.sampleElevation??'','sampleElevation',{label:'采样点高程 m'})}</td>`+
+      `<td>${addDeleteButton()}</td>`;
+    isotopeRows.appendChild(tr);
+    bindDelete(tr,1,debounce(calculateIsotope,30));
+  }
+
+  function readIsotopeRows(){
+    return [...isotopeRows.rows].map((r,idx)=>({
+      id:clean($('[data-key="id"]',r)?.value)||`ISO-${idx+1}`,
+      o18:maybeNum($('[data-key="o18"]',r)?.value),
+      d:maybeNum($('[data-key="d"]',r)?.value),
+      sampleElevation:maybeNum($('[data-key="sampleElevation"]',r)?.value)
+    })).filter(r=>Number.isFinite(r.o18)&&Number.isFinite(r.d));
+  }
+
+  function currentMeteoricLine(){
+    const mode=$('#meteoricLineMode')?.value||'china2014';
+    if(mode==='custom'){
+      return {mode,name:'当地/自定义大气降水线',a:maybeNum($('#meteoricSlope')?.value),b:maybeNum($('#meteoricIntercept')?.value)};
+    }
+    return {mode,...METEORIC_LINE_PRESETS[mode]};
+  }
+
+  function updateMeteoricControls(recalc=true){
+    const mode=$('#meteoricLineMode')?.value||'china2014';
+    const slope=$('#meteoricSlope'), intercept=$('#meteoricIntercept');
+    if(mode==='custom'){
+      slope.disabled=false; intercept.disabled=false;
+    }else{
+      const p=METEORIC_LINE_PRESETS[mode];
+      slope.value=p.a; intercept.value=p.b; slope.disabled=true; intercept.disabled=true;
+    }
+    const line=currentMeteoricLine();
+    $('#meteoricFormulaText').textContent=Number.isFinite(line.a)&&Number.isFinite(line.b)
+      ? `当前：δD = ${line.a} × δ¹⁸O ${line.b>=0?'+':'−'} ${Math.abs(line.b)}`
+      : '当前：请输入有效的斜率与截距。';
+    if(recalc) calculateIsotope();
+  }
+
+  function updateElevationControls(recalc=true){
+    const mode=$('#elevationModel')?.value||'china';
+    $('#chinaElevationSettings')?.classList.toggle('hidden',mode!=='china');
+    $('#globalElevationSettings')?.classList.toggle('hidden',mode!=='global');
+    $('#customElevationSettings')?.classList.toggle('hidden',mode!=='custom');
+    updateCustomElevationFormulaText();
+    if(recalc) calculateIsotope();
+  }
+
+  function updateCustomElevationFormulaText(){
+    const isotope=$('#customElevationIsotope')?.value||'d';
+    const slope=maybeNum($('#customElevationSlope')?.value);
+    const intercept=maybeNum($('#customElevationIntercept')?.value);
+    const symbol=isotope==='d'?'δD':'δ¹⁸O';
+    const target=$('#customElevationFormulaText');
+    if(!target)return;
+    if(Number.isFinite(slope)&&Number.isFinite(intercept)){
+      target.textContent=`当地公式：${symbol} = ${slope} × ALT ${intercept>=0?'+':'−'} ${Math.abs(intercept)}；反算 ALT = (${symbol} ${intercept>=0?'−':'+'} ${Math.abs(intercept)}) / ${slope}。`;
+    }else{
+      target.textContent=`当地公式：${symbol} = a × ALT + b；反算 ALT = (${symbol} − b) / a。请录入研究区实测数据建立的局地回归系数。`;
+    }
+  }
+
+  function estimateRechargeElevation(sample){
+    const mode=$('#elevationModel')?.value||'china';
+    if(mode==='china'){
+      const lon=maybeNum($('#chinaLongitude')?.value), lat=maybeNum($('#chinaLatitude')?.value);
+      const label='中国 CHNIP 全国空间回归';
+      if(!Number.isFinite(lon)||!Number.isFinite(lat)) return {elevation:NaN,label,note:'需输入研究区经度和纬度后才能按全国 CHNIP 空间回归反算高程。'};
+      const elevation=(8.892-0.041*lon-0.312*lat-sample.o18)/0.002;
+      const outOfDomain=lon<80||lon>140||lat<20||lat>50;
+      const note=(outOfDomain?'经纬度超出原 CHNIP 站点约 80–140°E、20–50°N 的覆盖范围，属于外推；':'')+
+        '该全国回归受纬度、经度和区域气候共同影响，仅用于区域尺度初步估算，局地高程梯度通常更可靠。';
+      return {elevation,label,note};
+    }
+    if(mode==='global'){
+      const href=maybeNum($('#globalRefElevation')?.value), ref=maybeNum($('#globalRefO18')?.value), grad=maybeNum($('#globalGradient')?.value);
+      const label='全球平均 δ¹⁸O 梯度 + 本地参考点';
+      if(!Number.isFinite(href)||!Number.isFinite(ref)||!Number.isFinite(grad)||Math.abs(grad)<1e-12) return {elevation:NaN,label,note:'需输入参考点高程、参考点年加权降水 δ¹⁸O 和非零高程梯度。'};
+      const elevation=href+(sample.o18-ref)/(grad/100);
+      return {elevation,label,note:'全球 −0.28‰/100 m 为经验平均值；绝对高程由当地参考点锚定，特殊气候/高海拔区应改用实测局地梯度。'};
+    }
+    const isotope=$('#customElevationIsotope')?.value||'d';
+    const a=maybeNum($('#customElevationSlope')?.value), b=maybeNum($('#customElevationIntercept')?.value);
+    const label=`当地自定义 ${isotope==='d'?'δD':'δ¹⁸O'}–高程公式`;
+    if(!Number.isFinite(a)||!Number.isFinite(b)||Math.abs(a)<1e-12) return {elevation:NaN,label,note:'自定义公式需输入有效的斜率 a 与截距 b，且 a 不能为 0。公式形式为 δ = a·ALT + b。'};
+    const delta=isotope==='d'?sample.d:sample.o18;
+    return {elevation:(delta-b)/a,label,note:`按当地关系 ${isotope==='d'?'δD':'δ¹⁸O'} = ${fmt(a,6)}·ALT ${b>=0?'+':'−'} ${fmt(Math.abs(b),3)} 反算；应同时核对局地回归的 R²、样本高程范围及季节代表性。`};
+  }
+
+  function isotopeLinePosition(residual,tolerance){
+    if(!Number.isFinite(residual)) return {key:'none',label:'无法判定'};
+    if(Math.abs(residual)<=tolerance) return {key:'near',label:'降水线附近'};
+    return residual<0?{key:'below',label:'降水线下方'}:{key:'above',label:'降水线上方'};
+  }
+
+  function isotopeSourceInterpretation(sample,pos,elev){
+    const mode=$('#interpretationMode')?.value||'academic';
+    const dh=Number.isFinite(elev.elevation)&&Number.isFinite(sample.sampleElevation)?elev.elevation-sample.sampleElevation:NaN;
+    const heightAcademic=Number.isFinite(dh)
+      ? (dh>0
+          ? ` 估算补给高程高于采样点约 ${Math.round(dh)} m，支持来自较高地形单元的侧向径流或山地降水补给；但该结论受所选高程模型与端元代表性控制。`
+          : dh<0
+            ? ` 估算补给高程低于采样点约 ${Math.abs(Math.round(dh))} m，说明当前高程模型可能存在区域外推、蒸发/混合影响或端元不匹配，应优先检查局地回归。`
+            : ' 估算补给高程与采样点高程接近，支持近区大气降水入渗补给。')
+      : '';
+    const heightConcise=Number.isFinite(dh)
+      ? (dh>0 ? `；估算补给区约高于采样点 ${Math.round(dh)} m` : dh<0 ? `；估算高程低于采样点 ${Math.abs(Math.round(dh))} m，需检查模型` : '；补给高程与采样点接近')
+      : '';
+
+    if(mode==='concise'){
+      if(pos.key==='near') return `主要为大气降水补给，蒸发影响不明显${heightConcise}。`;
+      if(pos.key==='below') return `大气降水来源为主，但存在蒸发分馏或蒸发地表水混入${heightConcise}。`;
+      if(pos.key==='above') return `仍以降水来源为主，可能受高 d-excess 水汽、冷季/高海拔降水或端元混合影响${heightConcise}。`;
+      return '数据不足，无法判定补给源。';
+    }
+
+    if(pos.key==='near') return '样品位于所选大气降水线附近，δD 与 δ¹⁸O 基本保持大气降水的协同分馏关系，优先指示以大气降水直接或间接入渗补给为主，未见强烈蒸发型偏移。' + heightAcademic;
+    if(pos.key==='below') return '样品位于所选大气降水线下方，通常指示补给水在降落、地表停留或入渗过程中发生蒸发分馏，或混入受蒸发影响的河流、湖泊、土壤水等端元；若为地热/深循环水，还应排查高温水–岩氧同位素交换。' + heightAcademic;
+    if(pos.key==='above') return '样品位于所选大气降水线上方，常与较高 d-excess 的水汽源、冷季或高海拔降水、不同季节/水汽端元混合，或所选区域降水线与真实局地降水线不一致有关。该位置不能单独作为雪融水或特定水源的唯一证据。' + heightAcademic;
+    return '缺少有效同位素数据，无法进行补给源判读。';
+  }
+
+  function computeIsotope(sample){
+    const line=currentMeteoricLine();
+    const tolerance=Math.max(0,num($('#meteoricTolerance')?.value,5));
+    const expected=Number.isFinite(line.a)&&Number.isFinite(line.b)?line.a*sample.o18+line.b:NaN;
+    const residual=sample.d-expected;
+    const pos=isotopeLinePosition(residual,tolerance);
+    const dExcess=sample.d-8*sample.o18;
+    const elev=estimateRechargeElevation(sample);
+    const relative=Number.isFinite(elev.elevation)&&Number.isFinite(sample.sampleElevation)?elev.elevation-sample.sampleElevation:NaN;
+    return {...sample,line,expected,residual,pos,dExcess,elev,relative,source:isotopeSourceInterpretation(sample,pos,elev)};
+  }
+
+  function niceStep(span,target=8){
+    if(!(span>0)) return 1;
+    const raw=span/target, mag=10**Math.floor(Math.log10(raw)), n=raw/mag;
+    const mult=n<=1?1:n<=2?2:n<=2.5?2.5:n<=5?5:10;
+    return mult*mag;
+  }
+
+  function drawIsotope(data){
+    const canvas=$('#isotopeCanvas'); if(!canvas) return;
+    const ctx=canvas.getContext('2d'), W=canvas.width, H=canvas.height;
+    ctx.clearRect(0,0,W,H);ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+    const line=currentMeteoricLine();
+    let xs=data.map(r=>r.o18).filter(Number.isFinite);
+    if(!xs.length) xs=[-20,0];
+    let xmin=Math.min(...xs), xmax=Math.max(...xs);
+    let xspan=Math.max(4,xmax-xmin); xmin-=xspan*.14; xmax+=xspan*.14;
+    let xstep=niceStep(xmax-xmin,8); xmin=Math.floor(xmin/xstep)*xstep; xmax=Math.ceil(xmax/xstep)*xstep;
+    const lineYs=(Number.isFinite(line.a)&&Number.isFinite(line.b))?[line.a*xmin+line.b,line.a*xmax+line.b]:[];
+    let ys=[...data.map(r=>r.d).filter(Number.isFinite),...lineYs];
+    if(!ys.length) ys=[-140,20];
+    let ymin=Math.min(...ys), ymax=Math.max(...ys), yspan=Math.max(20,ymax-ymin); ymin-=yspan*.12;ymax+=yspan*.12;
+    let ystep=niceStep(ymax-ymin,8); ymin=Math.floor(ymin/ystep)*ystep; ymax=Math.ceil(ymax/ystep)*ystep;
+    const m={l:120,r:55,t:55,b:105};
+    const px=x=>m.l+(x-xmin)/(xmax-xmin)*(W-m.l-m.r);
+    const py=y=>H-m.b-(y-ymin)/(ymax-ymin)*(H-m.t-m.b);
+    ctx.strokeStyle='#111';ctx.lineWidth=2;ctx.strokeRect(m.l,m.t,W-m.l-m.r,H-m.t-m.b);
+    ctx.font='20px "Times New Roman","Noto Serif SC",serif';ctx.fillStyle='#111';ctx.textAlign='center';ctx.textBaseline='top';
+    for(let x=xmin,i=0;x<=xmax+xstep*.2&&i<50;x+=xstep,i++){
+      const xx=px(x);ctx.beginPath();ctx.moveTo(xx,H-m.b);ctx.lineTo(xx,H-m.b+9);ctx.stroke();ctx.fillText(Number.isInteger(x)?String(x):x.toFixed(1),xx,H-m.b+13);
+      if(i<49&&x+xstep/2<xmax){const mx=px(x+xstep/2);ctx.beginPath();ctx.moveTo(mx,H-m.b);ctx.lineTo(mx,H-m.b+5);ctx.stroke();}
+    }
+    ctx.textAlign='right';ctx.textBaseline='middle';
+    for(let y=ymin,i=0;y<=ymax+ystep*.2&&i<50;y+=ystep,i++){
+      const yy=py(y);ctx.beginPath();ctx.moveTo(m.l-9,yy);ctx.lineTo(m.l,yy);ctx.stroke();ctx.fillText(Number.isInteger(y)?String(y):y.toFixed(1),m.l-14,yy);
+    }
+    ctx.save();ctx.font='28px "Times New Roman","Noto Serif SC",serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('δ¹⁸O (‰)',m.l+(W-m.l-m.r)/2,H-35);ctx.translate(36,m.t+(H-m.t-m.b)/2);ctx.rotate(-Math.PI/2);ctx.fillText('δD / δ²H (‰)',0,0);ctx.restore();
+    if(Number.isFinite(line.a)&&Number.isFinite(line.b)){
+      ctx.save();ctx.strokeStyle='#777';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px(xmin),py(line.a*xmin+line.b));ctx.lineTo(px(xmax),py(line.a*xmax+line.b));ctx.stroke();ctx.restore();
+    }
+    data.forEach((r,i)=>{
+      const x=px(r.o18),y=py(r.d),color=markerColor(i);
+      ctx.save();ctx.strokeStyle=color;ctx.fillStyle='#fff';ctx.lineWidth=2.2;ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore();
+      ctx.save();ctx.font='21px "Times New Roman","Noto Serif SC",serif';ctx.fillStyle='#222';ctx.textAlign='left';ctx.textBaseline='bottom';ctx.fillText(clean(r.id),x+8,y-5);ctx.restore();
+    });
+    const boxW=445,boxH=86,bx=W-m.r-boxW-14,by=H-m.b-boxH-12;
+    ctx.save();ctx.fillStyle='rgba(255,255,255,.94)';ctx.strokeStyle='#777';ctx.lineWidth=1;ctx.fillRect(bx,by,boxW,boxH);ctx.strokeRect(bx,by,boxW,boxH);
+    ctx.strokeStyle='#777';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(bx+22,by+29);ctx.lineTo(bx+90,by+29);ctx.stroke();
+    ctx.fillStyle='#222';ctx.font='17px "Times New Roman","Noto Serif SC",serif';ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(line.name||'参考降水线',bx+105,by+29);
+    const formula=Number.isFinite(line.a)&&Number.isFinite(line.b)?`δD = ${line.a}δ¹⁸O ${line.b>=0?'+':'−'} ${Math.abs(line.b)}`:'公式无效';ctx.fillText(formula,bx+22,by+61);ctx.restore();
+  }
+
+  function calculateIsotope(){
+    if(!isotopeRows) return;
+    const rows=readIsotopeRows(),status=$('#isotopeStatus');
+    if(!rows.length){
+      isotopeComputed=[];$('#isotopeResults').innerHTML='';status.textContent='请输入至少一组有效的 δ¹⁸O 与 δD 数据。';drawIsotope([]);return;
+    }
+    isotopeComputed=rows.map(computeIsotope);
+    $('#isotopeResults').innerHTML=isotopeComputed.map(r=>{
+      const cls=r.pos.key==='near'?'isotope-position-near':r.pos.key==='below'?'isotope-position-below':r.pos.key==='above'?'isotope-position-above':'';
+      return `<tr><td>${safeText(r.id)}</td><td>${fmt(r.o18,2)}</td><td>${fmt(r.d,2)}</td><td>${fmt(r.dExcess,2)}</td><td>${fmt(r.residual,2)}</td><td class="${cls}">${safeText(r.pos.label)}</td><td>${safeText(r.source)}</td><td>${fmt(r.elev.elevation,0)}</td><td>${fmt(r.relative,0)}</td><td>${safeText(r.elev.label)}</td><td>${safeText(r.elev.note)}</td></tr>`;
+    }).join('');
+    const missing=isotopeComputed.filter(r=>!Number.isFinite(r.elev.elevation)).length;
+    status.textContent=`已计算 ${isotopeComputed.length} 组水样并更新同位素关系图${missing?`；其中 ${missing} 组尚缺高程模型所需参数，暂不输出补给高程`:''}。`;
+    drawIsotope(isotopeComputed);
+  }
+
+  $('#addIsotopeRow')?.addEventListener('click',()=>addIsotopeRow());
+  $('#calcIsotope')?.addEventListener('click',calculateIsotope);
+  $('#clearIsotope')?.addEventListener('click',()=>{isotopeRows.innerHTML='';addIsotopeRow();$('#isotopeResults').innerHTML='';$('#isotopeStatus').textContent='';isotopeComputed=[];drawIsotope([]);});
+  $('#isotopeExample')?.addEventListener('click',()=>{isotopeRows.innerHTML='';[
+    {id:'DRJ1',o18:-11.34,d:-83.53},{id:'DRJ2',o18:-11.62,d:-85.27}
+  ].forEach(addIsotopeRow);calculateIsotope();});
+  $('#importIsotopePaste')?.addEventListener('click',()=>{
+    const text=$('#isotopePaste')?.value.trim();if(!text)return;
+    const parsed=[];text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).forEach((line,i)=>{
+      const a=line.split(/\t|,|，|\s{2,}/).map(x=>x.trim());
+      if(a.length<3)return;if(i===0&&!Number.isFinite(Number(a[1])))return;
+      const o18=Number(a[1]),d=Number(a[2]),h=Number(a[3]);if(Number.isFinite(o18)&&Number.isFinite(d))parsed.push({id:a[0]||`ISO-${i+1}`,o18,d,sampleElevation:Number.isFinite(h)?h:''});
+    });
+    if(!parsed.length){$('#isotopeStatus').textContent='未识别到有效数据，请按“样品、δ18O、δD、采样点高程（可选）”排列。';return;}
+    isotopeRows.innerHTML='';parsed.forEach(addIsotopeRow);calculateIsotope();
+  });
+  $('#downloadIsotopePlot')?.addEventListener('click',()=>{const a=document.createElement('a');a.download='deltaD_delta18O_recharge.png';a.href=$('#isotopeCanvas').toDataURL('image/png');a.click();});
+  $('#exportIsotope')?.addEventListener('click',()=>downloadCSV('稳定同位素补给高程计算结果.csv',[[
+    '样品','δ18O(‰)','δD(‰)','d-excess(‰)','相对降水线偏移Δ(‰)','图上位置','补给源判读','估算补给高程(m)','采样点高程(m)','相对采样点高差(m)','高程模型','说明'
+  ],...isotopeComputed.map(r=>[r.id,r.o18,r.d,r.dExcess,r.residual,r.pos.label,r.source,r.elev.elevation,r.sampleElevation,r.relative,r.elev.label,r.elev.note])]));
+
+  $('#meteoricLineMode')?.addEventListener('change',()=>updateMeteoricControls(true));
+  $('#elevationModel')?.addEventListener('change',()=>updateElevationControls(true));
+  ['meteoricSlope','meteoricIntercept','meteoricTolerance','chinaLongitude','chinaLatitude','globalRefElevation','globalRefO18','globalGradient','customElevationIsotope','customElevationSlope','customElevationIntercept','interpretationMode'].forEach(id=>{
+    const el=$(`#${id}`);if(!el)return;el.addEventListener(el.tagName==='SELECT'?'change':'input',debounce(()=>{
+      if(id==='meteoricSlope'||id==='meteoricIntercept')updateMeteoricControls(false);
+      if(id==='customElevationIsotope'||id==='customElevationSlope'||id==='customElevationIntercept')updateCustomElevationFormulaText();
+      calculateIsotope();
+    },80));
+  });
+
+  $('#isotopeFile')?.addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;getWorkbook(file,wb=>{
+    const raw=rowsOf(wb.Sheets[wb.SheetNames[0]]);if(!raw.length){alert('工作表为空。');return;}
+    const normalize=v=>String(v??'').toLowerCase().replace(/\s/g,'').replace(/[¹⁸]/g,m=>m==='¹'?'1':'8').replace(/[²]/g,'2').replace(/[δ∆]/g,'delta');
+    let header=-1,idx={id:0,o18:1,d:2,h:3};
+    for(let r=0;r<Math.min(raw.length,12);r++){
+      const hs=raw[r].map(normalize);
+      const oi=hs.findIndex(x=>x.includes('18o')||x.includes('o18'));
+      const di=hs.findIndex(x=>x.includes('deltad')||x.includes('delta2h')||x.includes('2h')||x==='d');
+      if(oi>=0&&di>=0){header=r;idx.o18=oi;idx.d=di;idx.id=hs.findIndex(x=>x.includes('样品')||x.includes('编号')||x==='id'||x.includes('sample'));if(idx.id<0)idx.id=0;idx.h=hs.findIndex(x=>x.includes('高程')||x.includes('海拔')||x.includes('elevation')||x.includes('alt'));break;}
+    }
+    const start=header>=0?header+1:0,parsed=[];
+    raw.slice(start).forEach((row,i)=>{const o18=Number(row[idx.o18]),d=Number(row[idx.d]);if(!Number.isFinite(o18)||!Number.isFinite(d))return;const h=idx.h>=0?Number(row[idx.h]):NaN;parsed.push({id:clean(row[idx.id])||`ISO-${i+1}`,o18,d,sampleElevation:Number.isFinite(h)?h:''});});
+    if(!parsed.length){alert('未识别到有效的 δ18O 与 δD 两列。建议表头使用“样品、δ18O、δD、采样点高程”。');return;}
+    isotopeRows.innerHTML='';parsed.forEach(addIsotopeRow);calculateIsotope();
+  });});
 
   // ---------- Profile correction: mirrors the uploaded “剖面校正表打印” ----------
   const profileRows = $('#profileRows');
@@ -944,23 +1373,38 @@
     return [...thicknessRows.rows].map(r=>[clean($('[data-key="id"]',r)?.value), $('[data-key="layer"]',r)?.value, $('[data-out="trueThickness"]',r)?.textContent, $('[data-out="layerCum"]',r)?.textContent]);
   }
 
-  $('#exportKurlov')?.addEventListener('click',()=>downloadCSV('库尔洛夫计算结果.csv',[[
-    '样品','矿化度','阳离子总量','阴离子总量','误差','水化学类型','库尔洛夫式',
-    'Na/1000','K/100','√Mg','Na-K-Mg平衡区间','推荐计算公式','Na-K温标(℃)','K-Mg温标(℃)','理论热储温度(℃)','说明'
-  ],...kurlovComputed.map(r=>[r.id,r.M,r.catTotal,r.anTotal,r.balance,r.type,r.formula,r.nakmg.rawNa,r.nakmg.rawK,r.nakmg.rawMg,r.nakmg.zone,r.nakmg.recommendFormula,r.nakmg.tNaK,r.nakmg.tKMg,r.nakmg.reservoirTemp,r.nakmg.remark])]));
+  $('#exportKurlov')?.addEventListener('click',()=>{
+    const ionHeaders = kFields.flatMap(k => [`${ionDefs[k].label}(meq/L)`, `${ionDefs[k].label}占${ionDefs[k].group==='cat'?'总阳离子':'总阴离子'}(%)`]);
+    downloadCSV('库尔洛夫计算结果.csv',[[
+      '样品','矿化度','阳离子总量','阴离子总量','误差','水化学类型','库尔洛夫式',
+      ...ionHeaders,
+      'Cl(meq/L)','Na+K(meq/L)','(Na+K)/Cl','Na+K-Cl位置','Na+K-Cl解释','HCO3+SO4(meq/L)','Ca+Mg(meq/L)','(Ca+Mg)/(HCO3+SO4)','Ca+Mg-HCO3-SO4位置','Ca+Mg-HCO3-SO4解释',
+      'Na/1000','K/100','√Mg','Na-K-Mg平衡区间','推荐计算公式','Na-K温标(℃)','K-Mg温标(℃)','理论热储温度(℃)','说明'
+    ],...kurlovComputed.map(r=>[
+      r.id,r.M,r.catTotal,r.anTotal,r.balance,r.type,r.formula,
+      ...kFields.flatMap(k => [r.ionMeq[k], r.ionPercent[k]]),
+      r.ionDiagnostic.cl,r.ionDiagnostic.nak,r.ionDiagnostic.nakCl.ratio,r.ionDiagnostic.nakCl.label,r.ionDiagnostic.nakCl.explanation,r.ionDiagnostic.hco3so4,r.ionDiagnostic.caMg,r.ionDiagnostic.caMgAn.ratio,r.ionDiagnostic.caMgAn.label,r.ionDiagnostic.caMgAn.explanation,r.nakmg.rawNa,r.nakmg.rawK,r.nakmg.rawMg,r.nakmg.zone,r.nakmg.recommendFormula,r.nakmg.tNaK,r.nakmg.tKMg,r.nakmg.reservoirTemp,r.nakmg.remark
+    ])]);
+  });
   $('#exportProfile')?.addEventListener('click',()=>downloadCSV('剖面校正计算结果.csv',[['导线号','ΔX','ΔY','平距','高差'],...profileRowsData()]));
   $('#exportThickness')?.addEventListener('click',()=>downloadCSV('地层厚度计算结果.csv',[['导线号','分层','真厚度','累计厚度'],...thicknessRowsData()]));
 
-  const liveK=debounce(calculateKurlov),liveP=debounce(calculateProfile),liveT=debounce(calculateThickness);
+  const liveK=debounce(calculateKurlov),liveI=debounce(calculateIsotope),liveP=debounce(calculateProfile),liveT=debounce(calculateThickness);
   kRows.addEventListener('input',liveK);
+  isotopeRows?.addEventListener('input',liveI);
   profileRows.addEventListener('input',liveP);
   thicknessRows.addEventListener('input',liveT);
   thicknessRows.addEventListener('change',liveT);
 
   // ---------- init ----------
   addKurlovRow();addKurlovRow();
+  addIsotopeRow();addIsotopeRow();
   addProfileRow({id:0});addProfileRow({id:1});
   addThicknessRow();
+  updateMeteoricControls(false);
+  updateElevationControls(false);
   drawPiper([]);
+  drawIonDissolution([]);
   drawNaKMg([]);
+  drawIsotope([]);
 })();

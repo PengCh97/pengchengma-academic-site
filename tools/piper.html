@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="库尔洛夫式、Piper三线图、剖面校正和剖面地层厚度网页计算工具。">
+  <meta name="description" content="库尔洛夫式、Piper三线图、稳定同位素补给高程、剖面校正和剖面地层厚度网页计算工具。">
   <title>地学计算工具 | Pengcheng Ma</title>
   <link href="../styles.css" rel="stylesheet">
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -19,11 +19,12 @@
   <div class="section-heading tool-intro">
     <p class="eyebrow">WEB CALCULATORS</p>
     <h2>地学数据网页计算工具</h2>
-    <p>三个计算表保持独立。库尔洛夫式模块下方同时提供 Piper 三线图与 Na-K-Mg 三角图；剖面校正和地层厚度模块按原 Excel 表的字段与计算关系重新实现。Excel 上传仅用于快速导入，网页本身即可直接计算。</p>
+    <p>四个计算板块保持独立。库尔洛夫式模块下方同时提供 Piper 三线图、主要离子等当量关系图与 Na-K-Mg 三角图；新增的稳定同位素模块用于 δ¹⁸O–δD 关系图、补给高程估算与补给源判读；剖面校正和地层厚度模块按原 Excel 表的字段与计算关系重新实现。Excel 上传仅用于快速导入，网页本身即可直接计算。</p>
   </div>
 
   <div class="tool-tabs" role="tablist" aria-label="计算工具">
     <button class="tool-tab active" type="button" data-tab="kurlov">库尔洛夫式 + 图解</button>
+    <button class="tool-tab" type="button" data-tab="isotope">补给高程计算</button>
     <button class="tool-tab" type="button" data-tab="profile">剖面校正计算表</button>
     <button class="tool-tab" type="button" data-tab="thickness">剖面地层厚度计算表</button>
   </div>
@@ -64,11 +65,18 @@
     <p class="tool-status" id="kurlovStatus" aria-live="polite"></p>
 
     <div class="result-section">
-      <div class="subhead"><div><span class="tool-step">RESULT</span><h4>库尔洛夫式计算结果</h4></div></div>
+      <div class="subhead"><div><span class="tool-step">RESULT</span><h4>库尔洛夫式计算结果</h4><p>水化学类型按全部已输入离子的当量百分比判定：阳、阴离子分别以各自总 meq/L 为 100%，所有<strong>大于等于 25%</strong> 的离子均列入类型；不会因某一离子超过 50% 而省略其他达到或超过 25% 的离子。</p></div></div>
       <div class="table-scroll">
         <table class="calc-table result-table">
           <thead><tr><th>样品</th><th>矿化度 M (g/L)</th><th>Σ阳离子 (meq/L)</th><th>Σ阴离子 (meq/L)</th><th>平衡误差</th><th>水化学类型</th><th>库尔洛夫式（简式）</th></tr></thead>
           <tbody id="kurlovResults"></tbody>
+        </table>
+      </div>
+      <div class="subhead ion-detail-head"><div><span class="tool-step">ION %</span><h4>各离子当量浓度及占比</h4><p>每个离子的百分比均按其电荷类别分别计算：阳离子 meq/L ÷ Σ阳离子，阴离子 meq/L ÷ Σ阴离子。达到或超过 25% 的百分比会高亮，并参与“水化学类型”命名。</p></div></div>
+      <div class="table-scroll">
+        <table class="calc-table result-table ion-detail-table">
+          <thead><tr><th>样品</th><th>Na⁺<br>meq/L</th><th>Na⁺<br>%Σ阳离子</th><th>K⁺<br>meq/L</th><th>K⁺<br>%Σ阳离子</th><th>Ca²⁺<br>meq/L</th><th>Ca²⁺<br>%Σ阳离子</th><th>Mg²⁺<br>meq/L</th><th>Mg²⁺<br>%Σ阳离子</th><th>Cl⁻<br>meq/L</th><th>Cl⁻<br>%Σ阴离子</th><th>SO₄²⁻<br>meq/L</th><th>SO₄²⁻<br>%Σ阴离子</th><th>HCO₃⁻<br>meq/L</th><th>HCO₃⁻<br>%Σ阴离子</th><th>CO₃²⁻<br>meq/L</th><th>CO₃²⁻<br>%Σ阴离子</th><th>Fe²⁺<br>meq/L</th><th>Fe²⁺<br>%Σ阳离子</th><th>Fe³⁺<br>meq/L</th><th>Fe³⁺<br>%Σ阳离子</th><th>Al³⁺<br>meq/L</th><th>Al³⁺<br>%Σ阳离子</th><th>NH₄⁺<br>meq/L</th><th>NH₄⁺<br>%Σ阳离子</th><th>F⁻<br>meq/L</th><th>F⁻<br>%Σ阴离子</th><th>NO₃⁻<br>meq/L</th><th>NO₃⁻<br>%Σ阴离子</th></tr></thead>
+          <tbody id="kurlovIonDetails"></tbody>
         </table>
       </div>
     </div>
@@ -80,6 +88,43 @@
       </div>
       <div class="piper-wrap"><canvas id="piperCanvas" width="1500" height="1120" aria-label="Piper 三线图"></canvas></div>
       <div class="piper-legend" id="piperLegend"></div>
+    </div>
+
+    <div class="result-section ion-dissolution-section">
+      <div class="subhead">
+        <div>
+          <span class="tool-step">ION EQUILINE</span>
+          <h4>主要离子等当量关系图与水–岩作用判读</h4>
+          <p>依据库尔洛夫式输入数据自动换算为 meq/L，绘制 Na⁺+K⁺—Cl⁻ 与 Ca²⁺+Mg²⁺—HCO₃⁻+SO₄²⁻ 两组 1:1 等当量关系图，并按样品相对等当量线的位置给出机制提示。</p>
+        </div>
+        <button class="tool-button ghost" id="downloadIonDissolution" type="button">保存 PNG</button>
+      </div>
+
+      <div class="tool-notice formula-note ion-dissolution-note">
+        <strong>判读原则：</strong>两幅图均采用<strong>当量浓度（meq/L）</strong>，因此 1:1 线表示正、负离子电荷当量的化学计量对应关系，而不是 mg/L 的质量比。
+        <br><strong>① Na⁺+K⁺ 对 Cl⁻：</strong>接近 1:1 时，若 K⁺贡献较小，可视为岩盐（NaCl）等氯化物盐溶解的重要指示；位于线上方表示 Na⁺+K⁺ 相对过量，常与 Na/K 硅酸盐风化及/或阳离子交换释放 Na 有关；位于线下方则表示 Cl⁻ 相对过量，应考虑额外 Cl⁻ 来源及/或反向阳离子交换。由于经典判别多采用 Na⁺—Cl⁻，当 K⁺占比明显时需谨慎解释。
+        <br><strong>② Ca²⁺+Mg²⁺ 对 HCO₃⁻+SO₄²⁻：</strong>接近 1:1 时，符合方解石、白云石与石膏/硬石膏等矿物溶解的总体化学计量特征；位于线下方（HCO₃⁻+SO₄²⁻ 过量）常见于阳离子交换消耗 Ca/Mg，以及 Na/K 硅酸盐风化使 HCO₃⁻ 由 Na/K 配平；位于线上方（Ca²⁺+Mg²⁺ 过量）更常见于反向阳离子交换或 Ca/Mg 由 Cl⁻、NO₃⁻ 等其他阴离子配平。因此，<strong>“线上方=碳酸盐溶解、线下方=硅酸盐溶解”并不是普遍成立的唯一解释</strong>。
+        <br><strong>自动位置分类：</strong>网页为便于批量判读，将纵/横当量比 0.90–1.10 归为“1:1 线附近”；该 ±10% 阈值只是显示规则，不是文献规定的统一地球化学界线。实际结论应结合地层岩性、饱和指数、Cl⁻/Br⁻、SiO₂、离子交换指数及同位素等证据综合判断。
+        <br><strong>主要文献：</strong>
+        Zhou, P., Li, M. &amp; Lu, Y. (2017), <em>Hydrochemistry and Isotope Hydrology for Groundwater Sustainability of the Coastal Multilayered Aquifer System (Zhanjiang, China)</em>, Geofluids, 2017:7080346，
+        <a href="https://doi.org/10.1155/2017/7080346" target="_blank" rel="noopener noreferrer">DOI: 10.1155/2017/7080346</a>；
+        Datta, P.S. &amp; Tyagi, S.K. (1996), <em>Major Ion Chemistry of Groundwater in Delhi Area: Chemical Weathering Processes and Groundwater Flow Regime</em>, Journal of the Geological Society of India 47:179–188，
+        <a href="https://doi.org/10.17491/jgsi/1996/470205" target="_blank" rel="noopener noreferrer">DOI: 10.17491/jgsi/1996/470205</a>；
+        Cerling, T.E., Pederson, B.L. &amp; von Damm, K.L. (1989), <em>Sodium-calcium ion exchange in the weathering of shales: Implications for global weathering budgets</em>, Geology 17:552–554，
+        <a href="https://doi.org/10.1130/0091-7613(1989)017%3C0552:SCIEIT%3E2.3.CO;2" target="_blank" rel="noopener noreferrer">DOI: 10.1130/0091-7613(1989)017&lt;0552:SCIEIT&gt;2.3.CO;2</a>；
+        Fisher, R.S. &amp; Mullican, W.F. (1997), <em>Hydrochemical evolution of sodium-sulfate and sodium-chloride groundwater beneath the Northern Chihuahuan Desert, Trans-Pecos, Texas, USA</em>, Hydrogeology Journal 5(2):4–16，
+        <a href="https://doi.org/10.1007/s100400050102" target="_blank" rel="noopener noreferrer">DOI: 10.1007/s100400050102</a>。
+      </div>
+
+      <div class="piper-wrap ion-dissolution-wrap"><canvas id="ionDissolutionCanvas" width="1500" height="825" aria-label="主要离子等当量关系图"></canvas></div>
+
+      <div class="subhead ion-diagnostic-head"><div><span class="tool-step">INTERPRETATION</span><h4>样品位置自动解释</h4><p>表中“位置”仅描述相对 1:1 线的几何关系；“解释”给出与文献一致的优先机制及必要的非唯一性说明。</p></div></div>
+      <div class="table-scroll">
+        <table class="calc-table result-table ion-diagnostic-table">
+          <thead><tr><th>样品</th><th>Cl⁻ (meq/L)</th><th>Na⁺+K⁺ (meq/L)</th><th>(Na+K)/Cl</th><th>图①位置</th><th>图①解释</th><th>HCO₃⁻+SO₄²⁻ (meq/L)</th><th>Ca²⁺+Mg²⁺ (meq/L)</th><th>(Ca+Mg)/(HCO₃+SO₄)</th><th>图②位置</th><th>图②解释</th></tr></thead>
+          <tbody id="ionDissolutionResults"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="result-section nakmg-section">
@@ -139,10 +184,140 @@
     </div>
   </section>
 
-  <section class="tool-panel" id="panel-profile" data-panel="profile">
+
+  <section class="tool-panel" id="panel-isotope" data-panel="isotope">
     <div class="tool-card-head">
       <div>
         <span class="tool-step">02</span>
+        <h3>氢氧稳定同位素与补给高程计算</h3>
+        <p>输入水样 δ¹⁸O 和 δD（δ²H）值，绘制 δD–δ¹⁸O 关系图，计算 d-excess、相对选定大气降水线的偏移，并依据所选高程效应模型估算补给高程。δ 值单位均为 ‰，默认按 VSMOW 标度理解。</p>
+      </div>
+      <div class="tool-actions compact-actions">
+        <label class="file-button">导入 Excel<input id="isotopeFile" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+        <button class="tool-button ghost" id="isotopeExample" type="button">填入图示示例</button>
+      </div>
+    </div>
+
+    <div class="tool-notice formula-note">
+      <strong>重要说明：</strong><strong>δD–δ¹⁸O 大气降水线</strong>用于判断水样是否保持大气降水同位素关系；<strong>同位素—高程效应</strong>用于估算补给高程，两者不是同一个公式，因此本工具分开设置。补给高程优先使用研究区实测的局地降水同位素—高程关系；全国或全球经验关系只能作为区域尺度初步估算。
+    </div>
+
+    <div class="isotope-settings">
+      <div class="isotope-setting-block">
+        <h4>① δD–δ¹⁸O 关系图参考线</h4>
+        <label>大气降水线
+          <select id="meteoricLineMode">
+            <option value="china2014" selected>中国 CHNIP 大气降水线（Liu et al., 2014）</option>
+            <option value="china1983">中国常用全国大气降水线（7.9δ¹⁸O+8.2）</option>
+            <option value="global">全球大气降水线 GMWL（Craig, 1961）</option>
+            <option value="custom">当地/自定义大气降水线</option>
+          </select>
+        </label>
+        <div class="setting-grid compact-grid">
+          <label>斜率 a<input id="meteoricSlope" type="number" step="any" value="7.48" disabled></label>
+          <label>截距 b (‰)<input id="meteoricIntercept" type="number" step="any" value="1.01" disabled></label>
+          <label>“线附近”容差 ± (‰)<input id="meteoricTolerance" type="number" min="0" step="0.1" value="5"></label>
+        </div>
+        <p class="setting-formula" id="meteoricFormulaText">当前：δD = 7.48 × δ¹⁸O + 1.01</p>
+        <div class="setting-grid interpretation-setting-grid">
+          <label>补给源判读表述
+            <select id="interpretationMode">
+              <option value="academic" selected>学术版（推荐）</option>
+              <option value="concise">简洁版</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="isotope-setting-block">
+        <h4>② 补给高程模型</h4>
+        <label>高程效应公式
+          <select id="elevationModel">
+            <option value="china" selected>中国 CHNIP 全国空间回归（默认）</option>
+            <option value="global">全球平均 δ¹⁸O 高程梯度 + 本地参考点</option>
+            <option value="custom">当地/自定义线性高程公式</option>
+          </select>
+        </label>
+
+        <div class="elevation-model-group" id="chinaElevationSettings">
+          <div class="setting-grid">
+            <label>研究区经度 Lon (°E)<input id="chinaLongitude" type="number" step="any" placeholder="例如 105.0"></label>
+            <label>研究区纬度 Lat (°N)<input id="chinaLatitude" type="number" step="any" placeholder="例如 30.0"></label>
+          </div>
+          <p class="setting-formula">δ¹⁸O = 8.892 − 0.041·Lon − 0.312·Lat − 0.002·H；反算 H (m)。适用范围来自 CHNIP 全国站点统计关系。</p>
+        </div>
+
+        <div class="elevation-model-group hidden" id="globalElevationSettings">
+          <div class="setting-grid">
+            <label>参考点高程 Href (m)<input id="globalRefElevation" type="number" step="any" placeholder="当地降水观测点高程"></label>
+            <label>参考点 δ¹⁸Oref (‰)<input id="globalRefO18" type="number" step="any" placeholder="当地年加权降水 δ¹⁸O"></label>
+            <label>δ¹⁸O 梯度 (‰/100 m)<input id="globalGradient" type="number" step="any" value="-0.28"></label>
+          </div>
+          <p class="setting-formula">H = Href + (δ¹⁸Osample − δ¹⁸Oref) / (gradient/100)。默认梯度 −0.28‰/100 m 取自 Poage &amp; Chamberlain (2001) 的全球山地经验汇编；绝对高程仍必须由本地参考点锚定。</p>
+        </div>
+
+        <div class="elevation-model-group hidden" id="customElevationSettings">
+          <div class="setting-grid">
+            <label>当地公式采用同位素
+              <select id="customElevationIsotope"><option value="d" selected>δD</option><option value="o18">δ¹⁸O</option></select>
+            </label>
+            <label>斜率 a (‰/m)<input id="customElevationSlope" type="number" step="any" placeholder="例如 -0.022"></label>
+            <label>截距 b (‰)<input id="customElevationIntercept" type="number" step="any" placeholder="例如 -40"></label>
+          </div>
+          <p class="setting-formula" id="customElevationFormulaText">当地公式：δD = a × ALT + b；反算 ALT = (δD − b) / a。请录入研究区实测降水、泉水或地下水建立的局地回归系数。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+      <table class="calc-table input-table isotope-input-table">
+        <thead><tr><th>样品</th><th>δ¹⁸O (‰)</th><th>δD / δ²H (‰)</th><th>采样点高程 (m，可选)</th><th>操作</th></tr></thead>
+        <tbody id="isotopeRows"></tbody>
+      </table>
+    </div>
+    <div class="tool-actions">
+      <button class="tool-button secondary" id="addIsotopeRow" type="button">＋ 增加水样</button>
+      <button class="tool-button primary" id="calcIsotope" type="button">计算全部水样</button>
+      <button class="tool-button ghost" id="clearIsotope" type="button">清空</button>
+      <button class="tool-button ghost" id="exportIsotope" type="button">下载计算结果</button>
+    </div>
+    <details class="bulk-paste"><summary>从 Excel / 表格批量粘贴同位素数据</summary><p>推荐列顺序：样品、δ¹⁸O、δD、采样点高程（高程可省略）。</p><textarea id="isotopePaste" rows="5" placeholder="样品\tδ18O\tδD\t采样点高程\nDRJ1\t-11.34\t-83.53\nDRJ2\t-11.62\t-85.27"></textarea><button class="tool-button secondary" id="importIsotopePaste" type="button">导入粘贴数据</button></details>
+    <p class="tool-status" id="isotopeStatus" aria-live="polite"></p>
+
+    <div class="result-section isotope-plot-section">
+      <div class="subhead">
+        <div><span class="tool-step">δD–δ¹⁸O</span><h4>氢氧稳定同位素关系图</h4><p>样品采用空心圆标注并显示编号；参考线可在中国 CHNIP、中国常用全国线、GMWL 与当地自定义线之间切换；手机端图件会自动缩放适配屏幕。</p></div>
+        <button class="tool-button ghost" id="downloadIsotopePlot" type="button">保存 PNG</button>
+      </div>
+      <div class="piper-wrap isotope-plot-wrap"><canvas id="isotopeCanvas" width="1250" height="850" aria-label="δD 与 δ18O 稳定同位素关系图"></canvas></div>
+    </div>
+
+    <div class="result-section">
+      <div class="subhead"><div><span class="tool-step">RESULT</span><h4>补给高程与补给特征判读</h4><p>“补给源判读”提供学术版与简洁版两种表述。判读基于样品相对大气降水线的位置、d-excess 与估算补给高程，仅作为水文地球化学约束，不把单个点位偏移等同于唯一水源；最终结论应结合当地降水、河流/湖泊、雪融水端元及水文地质条件。</p></div></div>
+      <div class="table-scroll">
+        <table class="calc-table result-table isotope-result-table">
+          <thead><tr><th>样品</th><th>δ¹⁸O (‰)</th><th>δD (‰)</th><th>d-excess (‰)</th><th>相对降水线偏移 Δ (‰)</th><th>图上位置</th><th>补给源判读</th><th>估算补给高程 (m)</th><th>相对采样点高差 (m)</th><th>高程模型</th><th>说明</th></tr></thead>
+          <tbody id="isotopeResults"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tool-notice formula-note isotope-reference-note">
+      <strong>判读依据与文献：</strong>
+      <br>1. Craig (1961) 给出的全球大气降水线为 <code>δD = 8δ¹⁸O + 10</code>。水样接近大气降水线通常支持大气降水起源；明显沿较低斜率方向偏离并位于降水线下方，常见于入渗前/过程中蒸发或蒸发地表水混入。<a href="https://doi.org/10.1126/science.133.3465.1702" target="_blank" rel="noopener noreferrer">DOI: 10.1126/science.133.3465.1702</a>
+      <br>2. Liu et al. (2014) 基于 2005–2010 年 CHNIP 928 组降水样品建立现代中国大气降水线 <code>δD = 7.48δ¹⁸O + 1.01</code>，并给出全国空间回归 <code>δ¹⁸O = 8.892 − 0.041Lon − 0.312Lat − 0.002Alt</code>；全国平均 δ¹⁸O 高程梯度约 −0.13‰/100 m，青藏高原站点约 −0.30‰/100 m。<a href="https://doi.org/10.3402/tellusb.v66.22567" target="_blank" rel="noopener noreferrer">DOI: 10.3402/tellusb.v66.22567</a>
+      <br>3. 中国同位素水文学文献中还广泛使用 <code>δD = 7.9δ¹⁸O + 8.2</code> 作为全国尺度参考关系；Zhang &amp; Wang (2016) 对中国降水稳定同位素研究及区域大气降水线进行了综述。<a href="https://doi.org/10.1007/s11442-016-1307-y" target="_blank" rel="noopener noreferrer">DOI: 10.1007/s11442-016-1307-y</a>
+      <br>4. Poage &amp; Chamberlain (2001) 汇编全球山地研究，除部分特殊区外，δ¹⁸O 随高程升高的平均经验梯度约为 −0.28‰/100 m；它是<strong>梯度</strong>而不是绝对高程截距，因此计算绝对补给高程必须有当地参考点。<a href="https://doi.org/10.2475/ajs.301.1.1" target="_blank" rel="noopener noreferrer">DOI: 10.2475/ajs.301.1.1</a>
+      <br>5. Jasechko (2019) 的同位素水文地质综述指出，补给高程估算应优先建立当地降水同位素—高程关系；常用形式为 <code>H = h + (δG − δP)/m</code>。蒸发会使地下水偏离降水线并降低 d-excess，因此受明显蒸发影响的样品不宜直接用未校正的 δ¹⁸O 反算高程。<a href="https://doi.org/10.1029/2018RG000627" target="_blank" rel="noopener noreferrer">DOI: 10.1029/2018RG000627</a>
+      <br><strong>局地高程公式：</strong>自定义模型直接采用 <code>δ = a·ALT + b</code>，其中可选择 δD 或 δ¹⁸O，反算 <code>ALT = (δ − b)/a</code>。局地回归是补给高程估算的优先方案，使用时应同时报告回归样本范围、R²、季节/降水量加权方式及适用高程区间。
+      <br><strong>自动判读阈值：</strong>网页默认把样品相对所选降水线的垂向残差 |Δ| ≤ 5‰ 归为“降水线附近”。该数值只是批量显示阈值，可在上方自行修改，并非文献规定的统一水文地球化学边界。
+    </div>
+  </section>
+
+  <section class="tool-panel" id="panel-profile" data-panel="profile">
+    <div class="tool-card-head">
+      <div>
+        <span class="tool-step">03</span>
         <h3>地质—水文地质实测剖面校正表</h3>
         <p>字段和计算关系按原“剖面校正表打印”实现。输入导线号、X、Y 和地形图高程，其余列自动按原表公式计算。</p>
       </div>
@@ -167,7 +342,7 @@
   <section class="tool-panel" id="panel-thickness" data-panel="thickness">
     <div class="tool-card-head">
       <div>
-        <span class="tool-step">03</span>
+        <span class="tool-step">04</span>
         <h3>剖面地层厚度计算表</h3>
         <p>表头、输入项和中间计算列按原 Excel 表 A–V 列展开。导线方向、斜距、坡角、岩层产状、分层位置和分层代号均可直接在网页录入。</p>
       </div>

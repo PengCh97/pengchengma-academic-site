@@ -330,3 +330,80 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+
+/* Major-ion 1:1 equiline diagnostic plots */
+.ion-dissolution-note {
+  line-height: 1.75;
+  margin: 16px 0 18px;
+}
+.ion-dissolution-note a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ion-dissolution-wrap canvas {
+  min-width: 1120px;
+}
+.ion-diagnostic-head {
+  margin-top: 22px;
+}
+.ion-diagnostic-table {
+  min-width: 1700px;
+}
+.ion-diagnostic-table .ion-explain-cell {
+  min-width: 360px;
+  max-width: 470px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.55;
+}
+@media(max-width:620px){
+  .ion-dissolution-wrap canvas { min-width: 1060px; width: 1060px; }
+}
+
+/* Kurlov ion-equivalent detail output */
+.ion-detail-head{margin-top:22px}.ion-detail-table{min-width:3000px}.ion-detail-table th{line-height:1.35}.major-percent-cell{font-weight:900;background:#fff7d9;color:#765400}
+
+/* Stable-isotope recharge-elevation calculator */
+.isotope-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:22px 0 18px}.isotope-setting-block{padding:16px;border:1px solid var(--line);border-radius:16px;background:#f7f9fa}.isotope-setting-block h4{margin:0 0 12px;font-size:1rem}.isotope-setting-block>label,.isotope-setting-block .setting-grid label{display:grid;gap:6px;font-size:.82rem;font-weight:800;color:#455a64}.isotope-setting-block select,.isotope-setting-block input{width:100%;border:1px solid #cbd7dc;border-radius:8px;background:#fff;padding:9px;color:var(--ink);font:inherit}.isotope-setting-block input:disabled{background:#edf1f2;color:#63757d}.setting-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:11px}.setting-grid.compact-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.setting-formula{margin:10px 0 0;color:var(--muted);font-size:.8rem;line-height:1.55}.elevation-model-group.hidden{display:none}.isotope-input-table{min-width:780px}.isotope-input-table input{width:150px}.isotope-input-table [data-key="id"]{width:140px}.isotope-result-table{min-width:1600px}.isotope-result-table td:nth-child(7),.isotope-result-table td:nth-child(11){white-space:normal;text-align:left;min-width:280px;line-height:1.55}.isotope-plot-wrap canvas{min-width:800px}.isotope-reference-note code{white-space:normal}.isotope-position-near{color:#28704a;font-weight:800}.isotope-position-below{color:#a2452d;font-weight:800}.isotope-position-above{color:#6b4fa2;font-weight:800}
+@media(max-width:900px){.isotope-settings{grid-template-columns:1fr}.setting-grid,.setting-grid.compact-grid{grid-template-columns:1fr 1fr}.isotope-plot-wrap canvas{min-width:760px}}
+@media(max-width:620px){.setting-grid,.setting-grid.compact-grid{grid-template-columns:1fr}.isotope-plot-wrap canvas{min-width:720px}}
+
+/* V14: isotope UX + mobile compatibility refinements */
+.interpretation-setting-grid{grid-template-columns:minmax(0,1fr);max-width:320px}
+.isotope-setting-block select{min-height:42px}
+.isotope-plot-wrap{overflow:hidden}
+.isotope-plot-wrap canvas{display:block;width:100%;max-width:100%;height:auto;min-width:0}
+.isotope-input-table th:first-child,.isotope-input-table td:first-child,
+.isotope-result-table th:first-child,.isotope-result-table td:first-child{position:sticky;left:0;z-index:3;background:#fff;box-shadow:1px 0 0 var(--line)}
+.isotope-input-table thead th:first-child,.isotope-result-table thead th:first-child{background:#edf3f4;z-index:5}
+.isotope-setting-block input,.isotope-setting-block select,.isotope-input-table input{font-size:16px}
+
+@media(max-width:900px){
+  .isotope-settings{grid-template-columns:1fr;gap:12px}
+  .setting-grid,.setting-grid.compact-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .interpretation-setting-grid{grid-template-columns:1fr;max-width:none}
+  .isotope-plot-wrap{padding:4px}
+  .isotope-plot-wrap canvas{width:100%;min-width:0;max-width:100%}
+  .isotope-input-table{min-width:690px}
+  .isotope-result-table{min-width:1500px}
+  .isotope-setting-block{padding:14px}
+  .isotope-setting-block h4{font-size:.98rem}
+}
+
+@media(max-width:620px){
+  .tool-panel{padding:14px;border-radius:16px}
+  .tool-card-head h3{font-size:1.42rem}
+  .tool-card-head p,.subhead p{font-size:.9rem}
+  .tool-notice{padding:12px;font-size:.84rem;overflow-wrap:anywhere}
+  .setting-grid,.setting-grid.compact-grid{grid-template-columns:1fr}
+  .isotope-setting-block{padding:12px;border-radius:12px}
+  .isotope-setting-block>label,.isotope-setting-block .setting-grid label{font-size:.84rem}
+  .isotope-plot-wrap canvas{width:100%;min-width:0}
+  .isotope-input-table{min-width:650px}
+  .isotope-result-table{min-width:1450px}
+  .table-scroll{scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+  .tool-actions .tool-button,.tool-actions .file-button{min-width:calc(50% - 5px);flex:1 1 calc(50% - 5px)}
+  .compact-actions .tool-button,.compact-actions .file-button{min-width:0;flex:1 1 auto}
+  .bulk-paste textarea{font-size:16px}
+}
