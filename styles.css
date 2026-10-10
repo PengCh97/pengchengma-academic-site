@@ -576,3 +576,48 @@
   .brand-mark{width:38px;height:38px;}
   .brand strong{font-size:.88rem;}
 }
+
+/* V43: Local meteoric water line regression / reference-point elevation model */
+.local-mwl-panel{margin:14px 0 24px;background:#f7f9fa}
+.local-mwl-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+.local-mwl-heading>div{flex:1 1 420px}
+.local-mwl-panel h4{margin:0 0 7px}
+.local-mwl-panel .setting-formula{margin-top:5px}
+.local-mwl-panel .mwl-fit-settings{grid-template-columns:minmax(200px,360px);margin:14px 0}
+.local-mwl-panel .mwl-fit-settings label{display:grid;gap:6px;font-weight:800;font-size:.85rem;color:#455a64}
+.local-mwl-panel select{font:inherit;font-size:16px;padding:9px;border:1px solid #cbd7dc;background:#fff;border-radius:8px;width:100%}
+.mwl-input-table{min-width:810px}
+.mwl-input-table input{width:148px;font-size:16px}
+.mwl-input-table [data-key="id"]{width:170px}
+.mwl-input-table th:first-child,.mwl-input-table td:first-child{position:sticky;left:0;z-index:3;background:#fff}
+.mwl-input-table thead th:first-child{background:#edf3f4;z-index:4}
+.mwl-actions{margin-top:14px;flex-wrap:wrap}
+.mwl-fit-result{font-size:1rem;font-weight:750;line-height:1.7;color:var(--accent2);margin:15px 0 4px;overflow-wrap:anywhere}
+.local-mwl-panel .tool-status{margin:0 0 8px}
+.reference-parameter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.reference-main-formula{line-height:1.85;overflow-wrap:anywhere}
+.reference-example-actions{margin-top:10px}
+.reference-example-actions .tool-button{font-size:.78rem;max-width:100%;white-space:normal;text-align:center}
+#referenceFormulaText{overflow-wrap:anywhere}
+@media(max-width:620px){.local-mwl-panel{margin-block:12px 19px;padding:12px}.local-mwl-panel .mwl-fit-settings,.reference-parameter-grid{grid-template-columns:1fr}.mwl-input-table{min-width:700px}.mwl-input-table input{width:130px}.mwl-actions .tool-button{white-space:normal}}
+
+/* V44: isotope vs known altitude, simultaneous δ18O and δD calibrations */
+.altitude-fit-panel{margin:14px 0 24px;background:#f7f9fa}
+.altitude-fit-panel .local-mwl-heading>div{flex:1 1 440px}
+.altitude-fit-panel h4{margin:0 0 7px}
+.altitude-fit-panel .setting-formula{margin-top:8px}
+.altitude-fit-notice{margin:12px 0 16px;font-size:.83rem}
+.alt-fit-input-table{min-width:760px}
+.alt-fit-input-table input{width:150px;font-size:16px}
+.alt-fit-input-table [data-key="id"]{width:170px}
+.alt-fit-input-table th:first-child,.alt-fit-input-table td:first-child{position:sticky;left:0;z-index:3;background:white}
+.alt-fit-input-table thead th:first-child{background:#edf3f4;z-index:4}
+.altitude-fit-actions{margin-top:14px;flex-wrap:wrap}
+.altitude-fit-results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:16px 0 10px}
+.altitude-fit-result{border:1px solid #d4e2e4;border-radius:12px;padding:14px;background:white;display:flex;flex-direction:column;gap:10px;min-width:0}
+.altitude-fit-result h5{font-size:.92rem;line-height:1.45;margin:0;color:var(--ink)}
+.altitude-fit-result p{margin:0;font-size:.86rem;line-height:1.75;overflow-wrap:anywhere;color:var(--accent2);flex:1}
+.altitude-fit-result button{white-space:normal;text-align:center;max-width:100%}
+.altitude-fit-result button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:750px){.altitude-fit-results{grid-template-columns:1fr}}
+@media(max-width:620px){.altitude-fit-panel{margin-block:12px 19px;padding:12px}.alt-fit-input-table{min-width:680px}.alt-fit-input-table input{width:130px}.altitude-fit-actions .tool-button{white-space:normal}}

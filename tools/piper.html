@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="免费在线库尔洛夫式计算工具，可自动计算离子 meq/L、毫克当量百分比、水化学类型和电荷平衡误差，并绘制 Piper 三线图、离子等当量关系图、Na-K-Mg 三角图，同时支持氢氧稳定同位素与补给高程计算。">
+  <meta name="description" content="免费在线库尔洛夫式计算工具，可自动计算离子 meq/L、毫克当量百分比、水化学类型和电荷平衡误差，并绘制 Piper 三线图、离子等当量关系图、Na-K-Mg 三角图，同时支持当地大气降水线拟合、氢氧同位素—高程回归及补给高程计算。">
   <meta name="robots" content="index,follow,max-image-preview:large">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
@@ -12,9 +12,9 @@
   <meta property="og:url" content="https://pengchengma.com/tools/piper.html">
   <title>库尔洛夫式在线计算｜水化学类型、Piper三线图与补给高程计算</title>
   <link rel="canonical" href="https://pengchengma.com/tools/piper.html">
-  <link href="../styles.css?v=42" rel="stylesheet">
+  <link href="../styles.css?v=45" rel="stylesheet">
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script defer src="hydro-tools.js?v=42"></script>
+  <script defer src="hydro-tools.js?v=45"></script>
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -231,6 +231,77 @@
       <strong>重要说明：</strong><strong>δD–δ¹⁸O 大气降水线</strong>用于判断水样是否保持大气降水同位素关系；<strong>同位素—高程效应</strong>用于估算补给高程，两者不是同一个公式，因此本工具分开设置。补给高程优先使用研究区实测的局地降水同位素—高程关系；全国或全球经验关系只能作为区域尺度初步估算。
     </div>
 
+    <section class="isotope-setting-block local-mwl-panel" aria-labelledby="localMwlTitle">
+      <div class="local-mwl-heading">
+        <div>
+          <h4 id="localMwlTitle">当地大气降水线拟合（δD = a · δ¹⁸O + b）</h4>
+          <p class="setting-formula">请使用<strong>当地实测的大气降水样品</strong>，而非地下水样品；依据配对的 δ¹⁸O 与 δD 计算局地大气降水线（LMWL）。拟合后可直接应用到下方的关系图参考线、水样图件及判读结果。</p>
+        </div>
+        <label class="file-button">导入降水 Excel / CSV<input id="mwlFile" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+      </div>
+      <div class="setting-grid mwl-fit-settings">
+        <label>拟合方法
+          <select id="mwlFitMethod"><option value="ols" selected>普通最小二乘法（OLS）</option><option value="wls">降水量加权最小二乘法（WLS）</option></select>
+        </label>
+      </div>
+      <div class="table-scroll">
+        <table class="calc-table input-table mwl-input-table">
+          <thead><tr><th>降水样品/月份</th><th>δ¹⁸O (‰)</th><th>δD / δ²H (‰)</th><th>降水量 (mm，加权时必填)</th><th>操作</th></tr></thead>
+          <tbody id="mwlRows"></tbody>
+        </table>
+      </div>
+      <div class="tool-actions mwl-actions">
+        <button class="tool-button secondary" id="addMwlRow" type="button">＋ 增加降水样品</button>
+        <button class="tool-button primary" id="fitMwl" type="button">拟合并应用至大气降水线</button>
+        <button class="tool-button ghost" id="clearMwl" type="button">清空降水数据</button>
+        <button class="tool-button ghost" id="exportMwl" type="button">导出拟合结果 CSV</button>
+      </div>
+      <details class="bulk-paste"><summary>批量粘贴降水同位素数据</summary><p>列顺序：样品/月份、δ¹⁸O、δD、降水量（可选；WLS 时每行须为正数）。支持 Excel 粘贴的 Tab 分隔和 CSV。</p><textarea id="mwlPaste" rows="4" placeholder="月份&#9;δ18O&#9;δD&#9;降水量(mm)
+1月&#9;-9.5&#9;-65.1&#9;33
+2月&#9;-8.8&#9;-60.5&#9;48"></textarea><button class="tool-button secondary" id="importMwlPaste" type="button">导入粘贴数据</button></details>
+      <p class="mwl-fit-result" id="mwlFormulaResult" aria-live="polite">尚未拟合。请至少录入两组 δ¹⁸O 不完全相同的有效降水样品。</p>
+      <p class="tool-status" id="mwlStatus" aria-live="polite"></p>
+      <p class="setting-formula"><strong>符号说明：</strong>δD — 大气降水氢同位素值（‰）；δ¹⁸O — 大气降水氧同位素值（‰）；<strong>a</strong> — 拟合斜率（无量纲，‰/‰）；<strong>b</strong> — 拟合截距（‰）；<strong>n</strong> — 有效降水样品数；<strong>R²</strong> — 决定系数；<strong>RMSE</strong> — 残差均方根（‰）；<strong>WLS 权重</strong> — 每个降水样品对应的降水量（mm）。OLS 每组样品权重相同；WLS 以降水量为权重，均需检查异常值、样品时间覆盖与季节代表性。<strong>此降水线拟合不等于同位素—高程梯度 K 的拟合</strong>。</p>
+    </section>
+
+    <section class="isotope-setting-block altitude-fit-panel" aria-labelledby="altFitTitle">
+      <div class="local-mwl-heading">
+        <div>
+          <h4 id="altFitTitle">同位素—高程关系拟合：δ¹⁸O = a × ALT + b / δD = a × ALT + b</h4>
+          <p class="setting-formula">输入各<strong>已知高程 ALT</strong> 的样品及其 δ¹⁸O、δD（可只填其中一种），分别使用普通最小二乘法（OLS）反演 <strong>a</strong>、<strong>b</strong>。两种同位素均达到拟合条件时，<strong>两条公式同时输出</strong>；不需要两列同位素都完整。</p>
+        </div>
+        <label class="file-button">导入高程同位素 Excel / CSV<input id="altFitFile" type="file" accept=".xlsx,.xls,.csv" hidden></label>
+      </div>
+      <div class="tool-notice formula-note altitude-fit-notice"><strong>数据适用性：</strong>ALT 应为建立高程效应关系时使用的<strong>已知校准高程</strong>（m），同位素与该高程对应。优先采用不同海拔降水采样点的降水同位素；泉水或地下水的取样点高程不必然等于实际补给高程，不能未经验证就用于标定补给高程模型。至少需要每种同位素两个不同 ALT 的有效样品，建议更多样品并关注高程覆盖范围。</div>
+      <div class="table-scroll">
+        <table class="calc-table input-table alt-fit-input-table">
+          <thead><tr><th>样品编号</th><th>已知高程 ALT (m)</th><th>δ¹⁸O (‰，可选)</th><th>δD / δ²H (‰，可选)</th><th>操作</th></tr></thead>
+          <tbody id="altFitRows"></tbody>
+        </table>
+      </div>
+      <div class="tool-actions altitude-fit-actions">
+        <button class="tool-button secondary" id="addAltFitRow" type="button">＋ 增加样品</button>
+        <button class="tool-button primary" id="fitAltitude" type="button">同时拟合可用同位素</button>
+        <button class="tool-button ghost" id="copyIsotopeToAltFit" type="button">从下方水样表读取已知高程</button>
+        <button class="tool-button ghost" id="clearAltFit" type="button">清空拟合数据</button>
+        <button class="tool-button ghost" id="exportAltFit" type="button">导出系数 CSV</button>
+      </div>
+      <details class="bulk-paste"><summary>批量粘贴已知高程与同位素数据</summary>
+        <p>推荐列顺序：样品、ALT（m）、δ¹⁸O（‰）、δD（‰）；可空缺某一同位素。含列名时支持调整列顺序与只有一类同位素的表。</p>
+        <textarea id="altFitPaste" rows="4" placeholder="样品&#9;ALT(m)&#9;δ18O&#9;δD
+A1&#9;200&#9;-7&#9;-50
+A2&#9;500&#9;-8.5&#9;-59
+A3&#9;800&#9;-10&#9;-68"></textarea>
+        <button class="tool-button secondary" id="importAltFitPaste" type="button">导入粘贴数据</button>
+      </details>
+      <div class="altitude-fit-results" aria-live="polite">
+        <div class="altitude-fit-result"><h5>氧同位素 δ¹⁸O—高程公式</h5><p id="altFitO18Result">待拟合：δ¹⁸O = a × ALT + b</p><button class="tool-button secondary" id="applyAltFitO18" type="button" disabled>将 δ¹⁸O 公式用于下方补给高程计算</button></div>
+        <div class="altitude-fit-result"><h5>氢同位素 δD—高程公式</h5><p id="altFitDResult">待拟合：δD = a × ALT + b</p><button class="tool-button secondary" id="applyAltFitD" type="button" disabled>将 δD 公式用于下方补给高程计算</button></div>
+      </div>
+      <p class="tool-status" id="altFitStatus" aria-live="polite"></p>
+      <p class="setting-formula"><strong>符号注释：</strong><strong>ALT</strong> — 已知校准高程 / 海拔（m）；<strong>δ¹⁸O</strong> — 氧-18 同位素组成（‰）；<strong>δD（δ²H）</strong> — 氘 / 氢-2 同位素组成（‰）；<strong>a</strong> — 各自同位素随高程变化的回归斜率（‰/m），乘以 100 即高程梯度 <strong>K</strong>（‰/100 m）；<strong>b</strong> — 回归直线截距（‰）；<strong>n</strong> — 该同位素有效的高程—同位素配对数；<strong>R²</strong> — 决定系数；<strong>RMSE</strong> — 残差均方根（‰）。拟合后可选择一条公式按 <strong>ALT = (δ − b)/a</strong> 反算补给高程，要求 a 非零，且尽量在校准高程范围内使用。</p>
+    </section>
+
     <div class="isotope-settings">
       <div class="isotope-setting-block">
         <h4>① δD–δ¹⁸O 关系图参考线</h4>
@@ -239,6 +310,7 @@
             <option value="china2014" selected>中国 CHNIP 大气降水线（Liu et al., 2014）</option>
             <option value="china1983">中国常用全国大气降水线（7.9δ¹⁸O+8.2）</option>
             <option value="global">全球大气降水线 GMWL（Craig, 1961）</option>
+            <option value="fitted" disabled>当地降水样品回归拟合线（先完成拟合）</option>
             <option value="custom">当地/自定义大气降水线</option>
           </select>
         </label>
@@ -265,6 +337,7 @@
             <option value="china" selected>中国 CHNIP 全国空间回归（默认）</option>
             <option value="global">全球平均 δ¹⁸O 高程梯度 + 本地参考点</option>
             <option value="custom">当地/自定义线性高程公式</option>
+            <option value="reference">参考点同位素差值法 H = h + (δG − δP)/K（图示方法）</option>
           </select>
         </label>
 
@@ -273,7 +346,7 @@
             <label>研究区经度 Lon (°E)<input id="chinaLongitude" type="number" step="any" placeholder="例如 105.0"></label>
             <label>研究区纬度 Lat (°N)<input id="chinaLatitude" type="number" step="any" placeholder="例如 30.0"></label>
           </div>
-          <p class="setting-formula">δ¹⁸O = 8.892 − 0.041·Lon − 0.312·Lat − 0.002·H；反算 H (m)。适用范围来自 CHNIP 全国站点统计关系。</p>
+          <p class="setting-formula">δ¹⁸O = 8.892 − 0.041·Lon − 0.312·Lat − 0.002·H；反算 H (m)。<strong>δ¹⁸O</strong> 为样品氧同位素比值（‰），<strong>Lon</strong> 为经度（°E），<strong>Lat</strong> 为纬度（°N），<strong>H</strong> 为估算海拔（m）；系数仅适用于该全国统计模型。</p>
         </div>
 
         <div class="elevation-model-group hidden" id="globalElevationSettings">
@@ -282,7 +355,7 @@
             <label>参考点 δ¹⁸Oref (‰)<input id="globalRefO18" type="number" step="any" placeholder="当地年加权降水 δ¹⁸O"></label>
             <label>δ¹⁸O 梯度 (‰/100 m)<input id="globalGradient" type="number" step="any" value="-0.28"></label>
           </div>
-          <p class="setting-formula">H = Href + (δ¹⁸Osample − δ¹⁸Oref) / (gradient/100)。默认梯度 −0.28‰/100 m 取自 Poage &amp; Chamberlain (2001) 的全球山地经验汇编；绝对高程仍必须由本地参考点锚定。</p>
+          <p class="setting-formula">H = Href + (δ¹⁸Osample − δ¹⁸Oref)/(gradient/100)。<strong>H</strong>：补给高程（m）；<strong>Href</strong>：降水参考点高程（m）；<strong>δ¹⁸Osample</strong>：水样 δ¹⁸O（‰）；<strong>δ¹⁸Oref</strong>：参考点大气降水 δ¹⁸O（‰）；<strong>gradient</strong>：δ¹⁸O 随高程变化梯度（‰/100 m）。默认 −0.28‰/100 m 为全球经验值，绝对高程仍需本地参考点。</p>
         </div>
 
         <div class="elevation-model-group hidden" id="customElevationSettings">
@@ -294,7 +367,29 @@
             <label>截距 b (‰)<input id="customElevationIntercept" type="number" step="any" placeholder="例如 -40"></label>
           </div>
           <p class="setting-formula" id="customElevationFormulaText">当地公式：δD = a × ALT + b；反算 ALT = (δD − b) / a。请录入研究区实测降水、泉水或地下水建立的局地回归系数。</p>
-          <p class="setting-formula"><strong>符号说明：</strong>ALT 为海拔高度（Altitude），单位为 m。</p>
+          <p class="setting-formula"><strong>符号说明：</strong>ALT 为海拔高度（m）；a 为同位素—高程回归斜率（‰/m）；b 为截距（‰）；δ 为所选 δD 或 δ¹⁸O（‰）。</p>
+        </div>
+
+        <div class="elevation-model-group hidden" id="referenceElevationSettings">
+          <p class="setting-formula reference-main-formula"><strong>图示公式：</strong>H = h + (δ<sub>G</sub> − δ<sub>P</sub>)/K。若 K 输入单位为 ‰/100 m，实际计算为 <strong>H = h + 100 × (δ<sub>G</sub> − δ<sub>P</sub>)/K</strong>。</p>
+          <div class="setting-grid">
+            <label>计算所用同位素
+              <select id="referenceIsotope"><option value="o18" selected>氧同位素 δ¹⁸O</option><option value="d">氢同位素 δD / δ²H</option></select>
+            </label>
+            <label>统一取样点高程 h (m，可选)<input id="referenceSampleElevation" type="number" step="any" placeholder="每行无高程时使用"></label>
+          </div>
+          <div class="setting-grid reference-parameter-grid">
+            <label><span>大气降水 δ<sub>P</sub>：δ¹⁸O (‰)</span><input id="referencePrecipO18" type="number" step="any" placeholder="请输入本地值"></label>
+            <label>δ¹⁸O 高程梯度 K (‰/100 m)<input id="referenceGradientO18" type="number" step="any" placeholder="例如 −0.46"></label>
+            <label><span>大气降水 δ<sub>P</sub>：δD (‰)</span><input id="referencePrecipD" type="number" step="any" placeholder="请输入本地值"></label>
+            <label>δD 高程梯度 K (‰/100 m)<input id="referenceGradientD" type="number" step="any" placeholder="例如 −2.7"></label>
+          </div>
+          <div class="tool-actions compact-actions reference-example-actions">
+            <button class="tool-button secondary" id="loadReferenceCase" type="button">填入截图中的罗田三里畈案例参数</button>
+          </div>
+          <p class="setting-formula"><strong>逐项符号注释：</strong><strong>H</strong> — 地下水补给/入渗高程（m）；<strong>h</strong> — 取样点高程（m，优先使用样品表中的高程；无数据时可用上方统一高程）；<strong>δ<sub>G</sub></strong> — 地下水样品的 δ¹⁸O 或 δD（‰）；<strong>δ<sub>P</sub></strong> — 与取样点高程 h 对应的大气降水同位素参考值（‰）；<strong>K</strong> — 相同同位素的当地垂直高程梯度（‰/100 m，通常为负值）。<strong>100</strong> — 将每 100 m 的梯度换算为每米梯度所需系数。δ¹⁸O 表示氧-18，δD（δ²H）表示氘/氢-2。</p>
+          <p class="setting-formula"><strong>重要前提：</strong>δ<sub>P</sub> 必须代表高程 h 附近的当地降水同位素值，K 应来自适用的局地高程观测或文献；不可把其他地区的经验参数直接作为研究区实测值。截图案例仅作方法复现：δ¹⁸O<sub>P</sub> = −7.74‰、δD<sub>P</sub> = −49.98‰，K<sub>18O</sub> = −0.46‰/100 m、K<sub>D</sub> = −2.7‰/100 m。高程基准建议统一为 1985 国家高程基准，钻孔按井口标高。</p>
+          <p class="setting-formula" id="referenceFormulaText" aria-live="polite">请填写当地大气降水 δ<sub>P</sub>、高程梯度 K，以及样品取样点高程 h。</p>
         </div>
       </div>
     </div>
@@ -316,7 +411,7 @@
 
     <div class="result-section isotope-plot-section">
       <div class="subhead">
-        <div><span class="tool-step">δD–δ¹⁸O</span><h4>氢氧稳定同位素关系图</h4><p>样品采用空心圆标注并显示编号；参考线可在中国 CHNIP、中国常用全国线、GMWL 与当地自定义线之间切换；手机端图件会自动缩放适配屏幕。</p></div>
+        <div><span class="tool-step">δD–δ¹⁸O</span><h4>氢氧稳定同位素关系图</h4><p>样品采用空心圆标注并显示编号；参考线支持中国 CHNIP、GMWL、当地自定义线及本页拟合的当地降水线；手机端图件会自动缩放适配屏幕。</p></div>
         <button class="tool-button ghost" id="downloadIsotopePlot" type="button">保存 PNG</button>
       </div>
       <div class="piper-wrap isotope-plot-wrap"><canvas id="isotopeCanvas" width="1250" height="850" aria-label="δD 与 δ18O 稳定同位素关系图"></canvas></div>
@@ -339,6 +434,8 @@
       <br>3. 中国同位素水文学文献中还广泛使用 <code>δD = 7.9δ¹⁸O + 8.2</code> 作为全国尺度参考关系；Zhang &amp; Wang (2016) 对中国降水稳定同位素研究及区域大气降水线进行了综述。<a href="https://doi.org/10.1007/s11442-016-1307-y" target="_blank" rel="noopener noreferrer">DOI: 10.1007/s11442-016-1307-y</a>
       <br>4. Poage &amp; Chamberlain (2001) 汇编全球山地研究，除部分特殊区外，δ¹⁸O 随高程升高的平均经验梯度约为 −0.28‰/100 m；它是<strong>梯度</strong>而不是绝对高程截距，因此计算绝对补给高程必须有当地参考点。<a href="https://doi.org/10.2475/ajs.301.1.1" target="_blank" rel="noopener noreferrer">DOI: 10.2475/ajs.301.1.1</a>
       <br>5. Jasechko (2019) 的同位素水文地质综述指出，补给高程估算应优先建立当地降水同位素—高程关系；常用形式为 <code>H = h + (δG − δP)/m</code>。蒸发会使地下水偏离降水线并降低 d-excess，因此受明显蒸发影响的样品不宜直接用未校正的 δ¹⁸O 反算高程。<a href="https://doi.org/10.1029/2018RG000627" target="_blank" rel="noopener noreferrer">DOI: 10.1029/2018RG000627</a>
+      <br><strong>图示参考点差值法：</strong><code>H = h + (δG − δP)/K</code>，当 K 使用 ‰/100 m 输入时必须计算为 <code>H = h + 100(δG − δP)/K</code>。δP 应取与 h 同高程基准的当地降水参考值；截图中的罗田三里畈参数仅作为该地区案例，不可默认外推至其他地区。
+      <br><strong>当地降水线拟合：</strong>以降水 δ¹⁸O 为自变量、降水 δD 为因变量拟合 <code>δD = a·δ¹⁸O + b</code>，支持 OLS 或按降水量加权的 WLS；拟合相关性 R² 不等于该降水线能直接推算高程。
       <br><strong>局地高程公式：</strong>自定义模型直接采用 <code>δ = a·ALT + b</code>，其中可选择 δD 或 δ¹⁸O，<strong>ALT 为海拔高度（Altitude，m）</strong>，反算 <code>ALT = (δ − b)/a</code>。局地回归是补给高程估算的优先方案，使用时应同时报告回归样本范围、R²、季节/降水量加权方式及适用高程区间。
       <br><strong>自动判读阈值：</strong>网页默认把样品相对所选降水线的垂向残差 |Δ| ≤ 5‰ 归为“降水线附近”。该数值只是批量显示阈值，可在上方自行修改，并非文献规定的统一水文地球化学边界。
     </div>

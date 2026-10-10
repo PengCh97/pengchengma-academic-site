@@ -941,6 +941,8 @@
   // ---------- Stable isotope recharge elevation ----------
   const isotopeRows = $('#isotopeRows');
   let isotopeComputed = [];
+  const mwlRows = $('#mwlRows');
+  let mwlFitResult = null;
   const METEORIC_LINE_PRESETS = {
     china2014: {name:'中国 CHNIP 大气降水线（Liu et al., 2014）', a:7.48, b:1.01},
     china1983: {name:'中国常用全国大气降水线（7.9δ¹⁸O+8.2）', a:7.9, b:8.2},
@@ -970,6 +972,9 @@
 
   function currentMeteoricLine(){
     const mode=$('#meteoricLineMode')?.value||'china2014';
+    if(mode==='fitted' && mwlFitResult){
+      return {mode,name:mwlFitResult.stale?'当地降水拟合线（数据已修改，待重算）':'当地降水样品拟合线',a:mwlFitResult.a,b:mwlFitResult.b};
+    }
     if(mode==='custom'){
       return {mode,name:'当地/自定义大气降水线',a:maybeNum($('#meteoricSlope')?.value),b:maybeNum($('#meteoricIntercept')?.value)};
     }
@@ -982,8 +987,9 @@
     if(mode==='custom'){
       slope.disabled=false; intercept.disabled=false;
     }else{
-      const p=METEORIC_LINE_PRESETS[mode];
-      slope.value=p.a; intercept.value=p.b; slope.disabled=true; intercept.disabled=true;
+      const p=mode==='fitted'?mwlFitResult:METEORIC_LINE_PRESETS[mode];
+      if(p){slope.value=p.a; intercept.value=p.b;}
+      slope.disabled=true; intercept.disabled=true;
     }
     const line=currentMeteoricLine();
     $('#meteoricFormulaText').textContent=Number.isFinite(line.a)&&Number.isFinite(line.b)
@@ -997,7 +1003,9 @@
     $('#chinaElevationSettings')?.classList.toggle('hidden',mode!=='china');
     $('#globalElevationSettings')?.classList.toggle('hidden',mode!=='global');
     $('#customElevationSettings')?.classList.toggle('hidden',mode!=='custom');
+    $('#referenceElevationSettings')?.classList.toggle('hidden',mode!=='reference');
     updateCustomElevationFormulaText();
+    updateReferenceFormulaText();
     if(recalc) calculateIsotope();
   }
 
@@ -1014,6 +1022,312 @@
       target.textContent=`当地公式：${symbol} = a × ALT + b；反算 ALT = (${symbol} − b) / a。请录入研究区实测数据建立的局地回归系数。`;
     }
   }
+
+  function updateReferenceFormulaText(){
+    const iso=$('#referenceIsotope')?.value||'o18';
+    const sym=iso==='d'?'δD':'δ¹⁸O';
+    const ref=maybeNum($(iso==='d'?'#referencePrecipD':'#referencePrecipO18')?.value);
+    const grad=maybeNum($(iso==='d'?'#referenceGradientD':'#referenceGradientO18')?.value);
+    const target=$('#referenceFormulaText');if(!target)return;
+    target.textContent=Number.isFinite(ref)&&Number.isFinite(grad)&&Math.abs(grad)>1e-12
+      ? `当前选用 ${sym}：δP = ${fmt(ref,3)}‰，K = ${fmt(grad,4)}‰/100 m；H = h + 100 × (${sym}G − (${fmt(ref,3)})) / (${fmt(grad,4)})。每个水样取其自身 δG 和 h。`
+      : `当前选用 ${sym}：请填写对应的当地降水 δP（‰）和非零的 K（‰/100 m），再填写取样点高程 h（m）。`;
+  }
+
+  // Independent δ–ALT calibration: each isotope has its own valid paired samples.
+  // Do not conflate calibration ALT (known) with the unknown recharge altitude.
+  const altFitRows = $('#altFitRows');
+  let altFitResult = null;
+
+  function addAltFitRow(data={}){
+    if(!altFitRows)return;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${editableCell(data.id??`ALT-${altFitRows.children.length+1}`,'id',{type:'text',label:'校准样品编号'})}</td>`+
+      `<td>${editableCell(data.alt??'','alt',{label:'已知高程 ALT m'})}</td>`+
+      `<td>${editableCell(data.o18??'','o18',{label:'氧同位素 δ18O ‰'})}</td>`+
+      `<td>${editableCell(data.d??'','d',{label:'氢同位素 δD ‰'})}</td>`+
+      `<td>${addDeleteButton()}</td>`;
+    altFitRows.appendChild(tr);
+    bindDelete(tr,1,markAltFitStale);
+  }
+
+  function readAltFitRows(){
+    return [...altFitRows.rows].map((tr,i)=>{
+      const raw={alt:clean($('[data-key="alt"]',tr)?.value),o18:clean($('[data-key="o18"]',tr)?.value),d:clean($('[data-key="d"]',tr)?.value)};
+      return {id:clean($('[data-key="id"]',tr)?.value)||`ALT-${i+1}`,
+        alt:maybeNum(raw.alt),o18:maybeNum(raw.o18),d:maybeNum(raw.d),
+        filled:Object.values(raw).some(Boolean)};
+    });
+  }
+
+  function markAltFitStale(){
+    if(!altFitResult)return;
+    altFitResult.stale=true;
+    ['O18','D'].forEach(t=>{$(`#applyAltFit${t}`).disabled=true;});
+    $('#altFitStatus').textContent='拟合数据已修改：之前的系数不再可应用或导出。请重新点击“同时拟合可用同位素”。';
+    ['o18','d'].forEach((key)=>{
+      const target=$(key==='o18'?'#altFitO18Result':'#altFitDResult');
+      if(target)target.textContent='数据已修改，请重新拟合以更新 a、b 和相关统计量。';
+    });
+  }
+
+  function fitAltColumn(rows,key){
+    const valid=rows.filter(r=>Number.isFinite(r.alt)&&Number.isFinite(r[key]));
+    const symbol=key==='o18'?'δ¹⁸O':'δD';
+    if(valid.length<2)return {error:`${symbol} 至少需要两组同时具备 ALT 和 ${symbol} 的有效样品。`,n:valid.length};
+    const n=valid.length, mx=valid.reduce((s,r)=>s+r.alt,0)/n;
+    const my=valid.reduce((s,r)=>s+r[key],0)/n;
+    const sxx=valid.reduce((s,r)=>s+(r.alt-mx)**2,0);
+    const sxy=valid.reduce((s,r)=>s+(r.alt-mx)*(r[key]-my),0);
+    const syy=valid.reduce((s,r)=>s+(r[key]-my)**2,0);
+    if(sxx<=Math.max(1,mx*mx)*n*Number.EPSILON*4)return {error:`${symbol} 的校准高程必须存在足够差异，无法从相同（或几乎相同）的 ALT 求斜率。`,n};
+    const a=sxy/sxx,b=my-a*mx;
+    const sse=valid.reduce((s,r)=>s+(r[key]-a*r.alt-b)**2,0);
+    return {a,b,n,r2:syy>1e-14?Math.max(0,Math.min(1,1-sse/syy)):NaN,
+      rmse:Math.sqrt(Math.max(0,sse/n)),minAlt:Math.min(...valid.map(r=>r.alt)),
+      maxAlt:Math.max(...valid.map(r=>r.alt)),rows:valid};
+  }
+
+  function renderAltFitResult(key,fit){
+    const target=$(key==='o18'?'#altFitO18Result':'#altFitDResult');
+    const apply=$(key==='o18'?'#applyAltFitO18':'#applyAltFitD');
+    apply.disabled=!fit||!!fit.error||!(Math.abs(fit.a)>1e-12)||!!altFitResult?.stale;
+    if(fit.error){target.textContent=fit.error;return;}
+    const symbol=key==='o18'?'δ¹⁸O':'δD';
+    const r2=Number.isFinite(fit.r2)?fmt(fit.r2,4):'不可定义（同位素无变化）';
+    target.textContent=`${symbol} = ${fmt(fit.a,8)} × ALT ${fit.b>=0?'+':'−'} ${fmt(Math.abs(fit.b),5)}；a = ${fmt(fit.a,8)} ‰/m；b = ${fmt(fit.b,5)} ‰；K = ${fmt(100*fit.a,5)} ‰/100 m；R² = ${r2}；RMSE = ${fmt(fit.rmse,4)} ‰；n = ${fit.n}；已知高程范围 ${fmt(fit.minAlt,1)}–${fmt(fit.maxAlt,1)} m。${fit.n===2?'（仅两组数据，直线必然穿过两点，请增加样品。）':''}${Math.abs(fit.a)<=1e-12?'（a≈0，不能反算 ALT。）':''}`;
+  }
+
+  function fitAltitude(){
+    const rows=readAltFitRows().filter(r=>r.filled);
+    const result={o18:fitAltColumn(rows,'o18'),d:fitAltColumn(rows,'d'),rows,stale:false};
+    altFitResult=result;
+    renderAltFitResult('o18',result.o18);
+    renderAltFitResult('d',result.d);
+    const fitted=['o18','d'].filter(k=>!result[k].error);
+    const incomplete=rows.filter(r=>!Number.isFinite(r.alt)||(!Number.isFinite(r.o18)&&!Number.isFinite(r.d))).length;
+    $('#altFitStatus').textContent=(fitted.length
+      ? `完成 ${fitted.map(k=>k==='o18'?'δ¹⁸O':'δD').join('、')} 的 OLS 拟合。${fitted.length===2?'两个高程关系式已同时输出。':'另一种同位素的数据不足以拟合。'}`
+      : '暂未建立有效高程关系：请至少提供两组不同已知高程的同位素测量值。')+
+      (incomplete?` 已忽略 ${incomplete} 行缺少有效 ALT 或缺少两种同位素的记录。`:'')+
+      ' 请确认校准样品的 ALT 对应同位素形成/补给高程，而不仅是地下水的采样点海拔。';
+    return result;
+  }
+
+  function parseAltFitTable(raw){
+    const normalize=v=>String(v??'').toLowerCase().replace(/\s/g,'').replace(/[¹⁸²]/g,c=>({'¹':'1','⁸':'8','²':'2'}[c])).replace(/[δ∆]/g,'delta');
+    let start=0,header=false,keys={id:0,alt:1,o18:2,d:3};
+    for(let i=0;i<Math.min(12,raw.length);i++){
+      const cols=(raw[i]||[]).map(normalize);
+      const alt=cols.findIndex(t=>t==='alt'||t==='alt(m)'||t.includes('高程')||t.includes('海拔')||t.includes('elevation')||t.includes('altitude'));
+      const o18=cols.findIndex(t=>t.includes('18o')||t.includes('o18'));
+      const d=cols.findIndex(t=>t==='d'||t.includes('deltad')||t.includes('delta2h')||t==='2h');
+      if(alt>=0&&(o18>=0||d>=0)){
+        let id=cols.findIndex(t=>t.includes('样品')||t.includes('编号')||t==='id'||t.includes('sample'));
+        if(id===alt||id===o18||id===d)id=-1;
+        keys={id,alt,o18,d};start=i+1;header=true;break;
+      }
+    }
+    const values=[];let skipped=0;
+    raw.slice(start).forEach(row=>{
+      if(!row||row.every(v=>clean(v)===''))return;
+      const alt=maybeNum(row[keys.alt]);
+      const o18=keys.o18>=0?maybeNum(row[keys.o18]):NaN;
+      const d=keys.d>=0?maybeNum(row[keys.d]):NaN;
+      if(!Number.isFinite(alt)||(!Number.isFinite(o18)&&!Number.isFinite(d))){skipped++;return;}
+      const id=keys.id>=0?clean(row[keys.id]):'';
+      values.push({id:id||`ALT-${values.length+1}`,alt,o18:Number.isFinite(o18)?o18:'',d:Number.isFinite(d)?d:''});
+    });
+    return {values,skipped,header};
+  }
+
+  function importAltFitData(raw){
+    const {values,skipped}=parseAltFitTable(raw);
+    if(!values.length){$('#altFitStatus').textContent='未识别有效高程—同位素记录。建议列名为“样品、ALT、δ18O、δD”（同位素可只保留一列）。';return;}
+    altFitRows.innerHTML='';values.forEach(addAltFitRow);
+    altFitResult=null;
+    $('#altFitO18Result').textContent='待拟合：δ¹⁸O = a × ALT + b';
+    $('#altFitDResult').textContent='待拟合：δD = a × ALT + b';
+    $('#applyAltFitO18').disabled=true;$('#applyAltFitD').disabled=true;
+    $('#altFitStatus').textContent=`已导入 ${values.length} 组有已知高程的样品${skipped?`，跳过 ${skipped} 行不完整记录`:''}；请点击拟合按钮。`;
+  }
+
+  $('#addAltFitRow')?.addEventListener('click',()=>{addAltFitRow();markAltFitStale();});
+  $('#fitAltitude')?.addEventListener('click',fitAltitude);
+  $('#clearAltFit')?.addEventListener('click',()=>{
+    altFitRows.innerHTML='';addAltFitRow();addAltFitRow();addAltFitRow();
+    altFitResult=null;
+    $('#altFitO18Result').textContent='待拟合：δ¹⁸O = a × ALT + b';
+    $('#altFitDResult').textContent='待拟合：δD = a × ALT + b';
+    $('#applyAltFitO18').disabled=true;$('#applyAltFitD').disabled=true;
+    $('#altFitStatus').textContent='校准样品已清空。';
+  });
+  altFitRows?.addEventListener('input',markAltFitStale);
+  $('#copyIsotopeToAltFit')?.addEventListener('click',()=>{
+    const samples=readIsotopeRows().filter(r=>Number.isFinite(r.sampleElevation));
+    if(!samples.length){$('#altFitStatus').textContent='下方水样表中没有同时具备 δ¹⁸O、δD 和已知采样点高程的数据。';return;}
+    importAltFitData([['样品','ALT','δ18O','δD'],...samples.map(r=>[r.id,r.sampleElevation,r.o18,r.d])]);
+    $('#altFitStatus').textContent=`已读取 ${samples.length} 组水样。注意：取样点海拔≠已知补给高程；只有经水文地质条件验证可代表同位素高程效应时，才可用于拟合。`;
+  });
+  $('#importAltFitPaste')?.addEventListener('click',()=>{
+    const paste=$('#altFitPaste')?.value.trim();if(!paste)return;
+    importAltFitData(paste.split(/\r?\n/).filter(Boolean).map(t=>t.split(/\t|,|，|\s{2,}/).map(v=>v.trim())));
+  });
+  $('#altFitFile')?.addEventListener('change',e=>{
+    const file=e.target.files[0];if(!file)return;
+    getWorkbook(file,wb=>importAltFitData(rowsOf(wb.Sheets[wb.SheetNames[0]])));
+    e.target.value='';
+  });
+  [['o18','O18'],['d','D']].forEach(([key,suffix])=>{
+    $(`#applyAltFit${suffix}`)?.addEventListener('click',()=>{
+      const f=altFitResult?.[key];
+      if(altFitResult?.stale||!f||f.error||!(Math.abs(f.a)>1e-12))return;
+      $('#customElevationIsotope').value=key;
+      $('#customElevationSlope').value=String(f.a);
+      $('#customElevationIntercept').value=String(f.b);
+      $('#elevationModel').value='custom';
+      updateElevationControls(true);
+      $('#altFitStatus').textContent=`已将 ${key==='o18'?'δ¹⁸O':'δD'} 的回归系数 a、b 写入“当地/自定义线性高程公式”，并更新下方补给高程结果；只建议在 ${fmt(f.minAlt,1)}–${fmt(f.maxAlt,1)} m 的标定范围内使用。`;
+    });
+  });
+  $('#exportAltFit')?.addEventListener('click',()=>{
+    if(!altFitResult||altFitResult.stale){$('#altFitStatus').textContent='请先完成拟合，数据修改后须重新拟合才能导出系数。';return;}
+    const results=[['回归类型','拟合公式','斜率 a (‰/m)','截距 b (‰)','高程梯度 K (‰/100m)','R²','RMSE (‰)','n','最低校准高程 (m)','最高校准高程 (m)']];
+    [['o18','δ18O'],['d','δD']].forEach(([k,label])=>{
+      const f=altFitResult[k];
+      if(!f.error)results.push([label,`${label} = ${f.a} × ALT + (${f.b})`,f.a,f.b,100*f.a,f.r2,f.rmse,f.n,f.minAlt,f.maxAlt]);
+    });
+    results.push([],['样品','ALT(m)','δ18O(‰)','δD(‰)']);
+    altFitResult.rows.forEach(r=>results.push([r.id,Number.isFinite(r.alt)?r.alt:'',Number.isFinite(r.o18)?r.o18:'',Number.isFinite(r.d)?r.d:'']));
+    downloadCSV('同位素高程线性拟合系数.csv',results);
+  });
+
+  // Local meteoric water line: x = measured precipitation δ18O, y = measured precipitation δD.
+  // OLS: wi = 1; WLS: wi = strictly positive amount of precipitation (mm).
+  function addMwlRow(data={}){
+    if(!mwlRows)return;
+    const tr=document.createElement('tr');
+    const id=data.id??`P-${mwlRows.children.length+1}`;
+    tr.innerHTML=`<td>${editableCell(id,'id',{type:'text',label:'降水样品编号或月份'})}</td>`+
+      `<td>${editableCell(data.o18??'','o18',{label:'降水 δ18O ‰'})}</td>`+
+      `<td>${editableCell(data.d??'','d',{label:'降水 δD ‰'})}</td>`+
+      `<td>${editableCell(data.rainfall??'','rainfall',{min:0,label:'降水量 mm'})}</td>`+
+      `<td>${addDeleteButton()}</td>`;
+    mwlRows.appendChild(tr);
+    bindDelete(tr,1,markMwlStale);
+  }
+
+  function readMwlRows(){
+    return [...mwlRows.rows].map((row,i)=>({
+      id:clean($('[data-key="id"]',row)?.value)||`P-${i+1}`,
+      o18:maybeNum($('[data-key="o18"]',row)?.value),
+      d:maybeNum($('[data-key="d"]',row)?.value),
+      rainfall:maybeNum($('[data-key="rainfall"]',row)?.value),
+      anyEntry:['o18','d','rainfall'].some(k=>clean($(`[data-key="${k}"]`,row)?.value)!=='')
+    }));
+  }
+
+  function markMwlStale(){
+    if(mwlFitResult){
+      mwlFitResult.stale=true;
+      $('#mwlStatus').textContent='降水样品数据已修改。现有拟合系数是上一次的结果，请点击“拟合并应用”更新参考线。';
+      $('#mwlFormulaResult').textContent=`上一次拟合（数据已修改）：δD = ${fmt(mwlFitResult.a,5)} × δ¹⁸O ${mwlFitResult.b>=0?'+':'−'} ${fmt(Math.abs(mwlFitResult.b),4)}；请重新拟合。`;
+      if($('#meteoricLineMode')?.value==='fitted')updateMeteoricControls(true);
+    }
+  }
+
+  function fitLocalMwl(){
+    const rows=readMwlRows().filter(r=>r.anyEntry);
+    const method=$('#mwlFitMethod')?.value||'ols';
+    const valid=rows.filter(r=>Number.isFinite(r.o18)&&Number.isFinite(r.d));
+    const status=$('#mwlStatus');
+    const error=message=>{status.textContent=message;return null;};
+    if(valid.length<2)return error('拟合失败：至少需要两组配对的降水 δ¹⁸O 与 δD 有效值（且 δ¹⁸O 存在差异）。');
+    if(valid.length!==rows.length)return error(`拟合失败：有 ${rows.length-valid.length} 行已填写数据但 δ¹⁸O 或 δD 不完整，请补全或清除后重试。`);
+    if(method==='wls' && valid.some(r=>!Number.isFinite(r.rainfall)||r.rainfall<=0))return error('拟合失败：降水量加权 WLS 要求每一有效样品均填写大于 0 的降水量（mm）。');
+    const weights=valid.map(r=>method==='wls'?r.rainfall:1);
+    const sumW=weights.reduce((v,w)=>v+w,0);
+    const meanX=valid.reduce((v,r,i)=>v+weights[i]*r.o18,0)/sumW;
+    const meanY=valid.reduce((v,r,i)=>v+weights[i]*r.d,0)/sumW;
+    const sxx=valid.reduce((v,r,i)=>v+weights[i]*(r.o18-meanX)**2,0);
+    const sxy=valid.reduce((v,r,i)=>v+weights[i]*(r.o18-meanX)*(r.d-meanY),0);
+    const syy=valid.reduce((v,r,i)=>v+weights[i]*(r.d-meanY)**2,0);
+    if(sxx<=1e-18*sumW*Math.max(1,meanX*meanX))return error('拟合失败：δ¹⁸O 数值相同或变化过小，无法确定回归斜率。');
+    const a=sxy/sxx, b=meanY-a*meanX;
+    const sse=valid.reduce((v,r,i)=>v+weights[i]*(r.d-a*r.o18-b)**2,0);
+    const r2=syy>1e-15?Math.max(0,Math.min(1,1-sse/syy)):NaN;
+    const rmse=Math.sqrt(Math.max(0,sse/sumW));
+    mwlFitResult={a,b,r2,rmse,n:valid.length,method,rows:valid,stale:false};
+    $('#meteoricLineMode option[value="fitted"]').disabled=false;
+    $('#meteoricLineMode').value='fitted';
+    $('#mwlFormulaResult').textContent=`${method==='wls'?'降水量加权 WLS':'普通最小二乘 OLS'} 拟合：δD = ${fmt(a,5)} × δ¹⁸O ${b>=0?'+':'−'} ${fmt(Math.abs(b),4)}；R² = ${fmt(r2,4)}，n = ${valid.length}，RMSE = ${fmt(rmse,3)}‰。`;
+    status.textContent=`已将拟合公式应用到下方大气降水线、同位素关系图与水样判读。${valid.length===2?'注意：仅 2 个样品，R² 无法说明拟合稳健性，请增加不同季节的降水样品。':''}`;
+    updateMeteoricControls(true);
+    return mwlFitResult;
+  }
+
+  function parseMwlTable(raw){
+    const normalize=v=>String(v??'').toLowerCase().replace(/\s/g,'').replace(/[¹⁸²]/g,c=>({'¹':'1','⁸':'8','²':'2'}[c])).replace(/[δ∆]/g,'delta');
+    let start=0,keys={id:0,o18:1,d:2,rainfall:3};
+    for(let i=0;i<Math.min(10,raw.length);i++){
+      const columns=(raw[i]||[]).map(normalize);
+      const x=columns.findIndex(t=>t.includes('18o')||t.includes('o18'));
+      const y=columns.findIndex(t=>t==='d'||t.includes('deltad')||t.includes('delta2h')||t==='2h');
+      if(x>=0 && y>=0){
+        const id=columns.findIndex(t=>t.includes('样品')||t.includes('月份')||t==='月'||t.includes('编号')||t.includes('sample')||t.includes('date'));
+        const p=columns.findIndex(t=>t.includes('降水量')||t.includes('rainfall')||t.includes('precip'));
+        keys={id,o18:x,d:y,rainfall:p};start=i+1;break;
+      }
+    }
+    const values=[];let skipped=0;
+    raw.slice(start).forEach((row,i)=>{
+      if(!row||row.every(v=>clean(v)===''))return;
+      const o18=maybeNum(row[keys.o18]),d=maybeNum(row[keys.d]);
+      if(!Number.isFinite(o18)||!Number.isFinite(d)){skipped++;return;}
+      const rainfall=keys.rainfall<0?NaN:maybeNum(row[keys.rainfall]);
+      const id=keys.id<0?'':clean(row[keys.id]);
+      values.push({id:id||`P-${values.length+1}`,o18,d,rainfall:Number.isFinite(rainfall)?rainfall:''});
+    });
+    return {values,skipped};
+  }
+  function importMwlData(raw){
+    const {values,skipped}=parseMwlTable(raw);
+    if(!values.length){$('#mwlStatus').textContent='未识别到有效降水数据。请检查表头或列顺序：样品/月份、δ18O、δD、降水量（可选）。';return;}
+    mwlRows.innerHTML='';values.forEach(addMwlRow);markMwlStale();
+    $('#mwlStatus').textContent=`已导入 ${values.length} 组降水样品${skipped?`，跳过 ${skipped} 行无效数据`:''}；请点击“拟合并应用”进行回归计算。`;
+  }
+
+  $('#addMwlRow')?.addEventListener('click',()=>{addMwlRow();markMwlStale();});
+  $('#fitMwl')?.addEventListener('click',fitLocalMwl);
+  $('#clearMwl')?.addEventListener('click',()=>{
+    mwlRows.innerHTML='';addMwlRow();addMwlRow();mwlFitResult=null;
+    $('#meteoricLineMode option[value="fitted"]').disabled=true;
+    if($('#meteoricLineMode').value==='fitted')$('#meteoricLineMode').value='china2014';
+    $('#mwlFormulaResult').textContent='尚未拟合。请至少录入两组 δ¹⁸O 不完全相同的有效降水样品。';
+    $('#mwlStatus').textContent='降水样品数据已清空。';
+    updateMeteoricControls(true);
+  });
+  mwlRows?.addEventListener('input',debounce(markMwlStale,100));
+  $('#mwlFitMethod')?.addEventListener('change',markMwlStale);
+  $('#importMwlPaste')?.addEventListener('click',()=>{
+    const pasted=$('#mwlPaste')?.value.trim();if(!pasted)return;
+    importMwlData(pasted.split(/\r?\n/).filter(Boolean).map(line=>line.split(/\t|,|，|\s{2,}/).map(v=>v.trim())));
+  });
+  $('#exportMwl')?.addEventListener('click',()=>{
+    if(!mwlFitResult){$('#mwlStatus').textContent='请先拟合当地降水线，才能导出拟合系数。';return;}
+    const f=mwlFitResult;
+    downloadCSV('当地大气降水线拟合结果.csv',[
+      ['拟合方法','斜率 a','截距 b (‰)','R²','有效样品数 n','RMSE (‰)','数据状态'],
+      [f.method.toUpperCase(),f.a,f.b,f.r2,f.n,f.rmse,f.stale?'原数据已改动，待重新拟合':'已更新'],
+      [],['降水样品/月份','δ18O (‰)','δD (‰)','降水量 (mm)'],
+      ...f.rows.map(r=>[r.id,r.o18,r.d,Number.isFinite(r.rainfall)?r.rainfall:''])
+    ]);
+  });
+  $('#loadReferenceCase')?.addEventListener('click',()=>{
+    $('#referencePrecipO18').value='-7.74';$('#referencePrecipD').value='-49.98';
+    $('#referenceGradientO18').value='-0.46';$('#referenceGradientD').value='-2.7';
+    updateReferenceFormulaText();calculateIsotope();
+  });
 
   function estimateRechargeElevation(sample){
     const mode=$('#elevationModel')?.value||'china';
@@ -1034,6 +1348,22 @@
       const elevation=href+(sample.o18-ref)/(grad/100);
       return {elevation,label,note:'全球 −0.28‰/100 m 为经验平均值；绝对高程由当地参考点锚定，特殊气候/高海拔区应改用实测局地梯度。'};
     }
+    if(mode==='reference'){
+      const isotope=$('#referenceIsotope')?.value||'o18';
+      const symbol=isotope==='d'?'δD':'δ¹⁸O';
+      const g=isotope==='d'?sample.d:sample.o18;
+      const p=maybeNum($(isotope==='d'?'#referencePrecipD':'#referencePrecipO18')?.value);
+      const k=maybeNum($(isotope==='d'?'#referenceGradientD':'#referenceGradientO18')?.value);
+      const sharedH=maybeNum($('#referenceSampleElevation')?.value);
+      const h=Number.isFinite(sample.sampleElevation)?sample.sampleElevation:sharedH;
+      const label=`参考点同位素差值法（${symbol}）`;
+      if(!Number.isFinite(h))return {elevation:NaN,label,note:'缺少 h：请填写该样品采样点高程（m），或提供适用于该样品的统一取样点高程。'};
+      if(!Number.isFinite(p))return {elevation:NaN,label,referenceElevation:h,note:`缺少当地降水 ${symbol} 的参考值 δP（‰）；必须对应高程 h = ${fmt(h,2)} m。`};
+      if(!Number.isFinite(k)||Math.abs(k)<1e-12)return {elevation:NaN,label,referenceElevation:h,note:`缺少 ${symbol} 的非零当地高程梯度 K（‰/100 m）。`};
+      const elevation=h+100*(g-p)/k;
+      const source=Number.isFinite(sample.sampleElevation)?'样品行取样点高程':'统一取样点高程';
+      return {elevation,referenceElevation:h,label,note:`按 H = h + 100×(δG−δP)/K 计算；h=${fmt(h,2)} m（${source}），δG=${fmt(g,3)}‰，δP=${fmt(p,3)}‰，K=${fmt(k,4)}‰/100 m。请确认 δP 对应 h 的降水背景且 K 具有局地代表性。`};
+    }
     const isotope=$('#customElevationIsotope')?.value||'d';
     const a=maybeNum($('#customElevationSlope')?.value), b=maybeNum($('#customElevationIntercept')?.value);
     const label=`当地自定义 ${isotope==='d'?'δD':'δ¹⁸O'}–高程公式`;
@@ -1050,7 +1380,8 @@
 
   function isotopeSourceInterpretation(sample,pos,elev){
     const mode=$('#interpretationMode')?.value||'academic';
-    const dh=Number.isFinite(elev.elevation)&&Number.isFinite(sample.sampleElevation)?elev.elevation-sample.sampleElevation:NaN;
+    const referenceHeight=Number.isFinite(elev.referenceElevation)?elev.referenceElevation:sample.sampleElevation;
+    const dh=Number.isFinite(elev.elevation)&&Number.isFinite(referenceHeight)?elev.elevation-referenceHeight:NaN;
     const heightAcademic=Number.isFinite(dh)
       ? (dh>0
           ? ` 估算补给高程高于采样点约 ${Math.round(dh)} m，支持来自较高地形单元的侧向径流或山地降水补给；但该结论受所选高程模型与端元代表性控制。`
@@ -1083,7 +1414,8 @@
     const pos=isotopeLinePosition(residual,tolerance);
     const dExcess=sample.d-8*sample.o18;
     const elev=estimateRechargeElevation(sample);
-    const relative=Number.isFinite(elev.elevation)&&Number.isFinite(sample.sampleElevation)?elev.elevation-sample.sampleElevation:NaN;
+    const referenceHeight=Number.isFinite(elev.referenceElevation)?elev.referenceElevation:sample.sampleElevation;
+    const relative=Number.isFinite(elev.elevation)&&Number.isFinite(referenceHeight)?elev.elevation-referenceHeight:NaN;
     return {...sample,line,expected,residual,pos,dExcess,elev,relative,source:isotopeSourceInterpretation(sample,pos,elev)};
   }
 
@@ -1165,22 +1497,23 @@
     const parsed=[];text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean).forEach((line,i)=>{
       const a=line.split(/\t|,|，|\s{2,}/).map(x=>x.trim());
       if(a.length<3)return;if(i===0&&!Number.isFinite(Number(a[1])))return;
-      const o18=Number(a[1]),d=Number(a[2]),h=Number(a[3]);if(Number.isFinite(o18)&&Number.isFinite(d))parsed.push({id:a[0]||`ISO-${i+1}`,o18,d,sampleElevation:Number.isFinite(h)?h:''});
+      const o18=maybeNum(a[1]),d=maybeNum(a[2]),h=maybeNum(a[3]);if(Number.isFinite(o18)&&Number.isFinite(d))parsed.push({id:a[0]||`ISO-${i+1}`,o18,d,sampleElevation:Number.isFinite(h)?h:''});
     });
     if(!parsed.length){$('#isotopeStatus').textContent='未识别到有效数据，请按“样品、δ18O、δD、采样点高程（可选）”排列。';return;}
     isotopeRows.innerHTML='';parsed.forEach(addIsotopeRow);calculateIsotope();
   });
   $('#downloadIsotopePlot')?.addEventListener('click',()=>{const a=document.createElement('a');a.download='deltaD_delta18O_recharge.png';a.href=$('#isotopeCanvas').toDataURL('image/png');a.click();});
   $('#exportIsotope')?.addEventListener('click',()=>downloadCSV('稳定同位素补给高程计算结果.csv',[[
-    '样品','δ18O(‰)','δD(‰)','d-excess(‰)','相对降水线偏移Δ(‰)','图上位置','补给源判读','估算补给高程(m)','采样点高程(m)','相对采样点高差(m)','高程模型','说明'
-  ],...isotopeComputed.map(r=>[r.id,r.o18,r.d,r.dExcess,r.residual,r.pos.label,r.source,r.elev.elevation,r.sampleElevation,r.relative,r.elev.label,r.elev.note])]));
+    '样品','δ18O(‰)','δD(‰)','d-excess(‰)','相对降水线偏移Δ(‰)','图上位置','补给源判读','估算补给高程(m)','采样点高程(m)','计算实际采用h(m)','相对采样点高差(m)','高程模型','说明'
+  ],...isotopeComputed.map(r=>[r.id,r.o18,r.d,r.dExcess,r.residual,r.pos.label,r.source,r.elev.elevation,Number.isFinite(r.sampleElevation)?r.sampleElevation:'',Number.isFinite(r.elev.referenceElevation)?r.elev.referenceElevation:r.sampleElevation,r.relative,r.elev.label,r.elev.note])]));
 
   $('#meteoricLineMode')?.addEventListener('change',()=>updateMeteoricControls(true));
   $('#elevationModel')?.addEventListener('change',()=>updateElevationControls(true));
-  ['meteoricSlope','meteoricIntercept','meteoricTolerance','chinaLongitude','chinaLatitude','globalRefElevation','globalRefO18','globalGradient','customElevationIsotope','customElevationSlope','customElevationIntercept','interpretationMode'].forEach(id=>{
+  ['meteoricSlope','meteoricIntercept','meteoricTolerance','chinaLongitude','chinaLatitude','globalRefElevation','globalRefO18','globalGradient','customElevationIsotope','customElevationSlope','customElevationIntercept','referenceIsotope','referenceSampleElevation','referencePrecipO18','referencePrecipD','referenceGradientO18','referenceGradientD','interpretationMode'].forEach(id=>{
     const el=$(`#${id}`);if(!el)return;el.addEventListener(el.tagName==='SELECT'?'change':'input',debounce(()=>{
       if(id==='meteoricSlope'||id==='meteoricIntercept')updateMeteoricControls(false);
       if(id==='customElevationIsotope'||id==='customElevationSlope'||id==='customElevationIntercept')updateCustomElevationFormulaText();
+      if(id.startsWith('reference'))updateReferenceFormulaText();
       calculateIsotope();
     },80));
   });
@@ -1196,7 +1529,7 @@
       if(oi>=0&&di>=0){header=r;idx.o18=oi;idx.d=di;idx.id=hs.findIndex(x=>x.includes('样品')||x.includes('编号')||x==='id'||x.includes('sample'));if(idx.id<0)idx.id=0;idx.h=hs.findIndex(x=>x.includes('高程')||x.includes('海拔')||x.includes('elevation')||x.includes('alt'));break;}
     }
     const start=header>=0?header+1:0,parsed=[];
-    raw.slice(start).forEach((row,i)=>{const o18=Number(row[idx.o18]),d=Number(row[idx.d]);if(!Number.isFinite(o18)||!Number.isFinite(d))return;const h=idx.h>=0?Number(row[idx.h]):NaN;parsed.push({id:clean(row[idx.id])||`ISO-${i+1}`,o18,d,sampleElevation:Number.isFinite(h)?h:''});});
+    raw.slice(start).forEach((row,i)=>{const o18=maybeNum(row[idx.o18]),d=maybeNum(row[idx.d]);if(!Number.isFinite(o18)||!Number.isFinite(d))return;const h=idx.h>=0?maybeNum(row[idx.h]):NaN;parsed.push({id:clean(row[idx.id])||`ISO-${i+1}`,o18,d,sampleElevation:Number.isFinite(h)?h:''});});
     if(!parsed.length){alert('未识别到有效的 δ18O 与 δD 两列。建议表头使用“样品、δ18O、δD、采样点高程”。');return;}
     isotopeRows.innerHTML='';parsed.forEach(addIsotopeRow);calculateIsotope();
   });});
@@ -1355,6 +1688,11 @@
     const reader=new FileReader();reader.onload=e=>{try{cb(XLSX.read(e.target.result,{type:'array'}));}catch(err){console.error(err);alert('无法读取该文件，请确认是有效的 Excel/CSV 文件。');}};reader.readAsArrayBuffer(file);
   }
   function rowsOf(sheet){return XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});}
+  $('#mwlFile')?.addEventListener('change',e=>{
+    const file=e.target.files[0];if(!file)return;
+    getWorkbook(file,wb=>importMwlData(rowsOf(wb.Sheets[wb.SheetNames[0]])));
+    e.target.value='';
+  });
   function normIonName(v){return String(v).replace(/\s/g,'').replace(/[＋+]/g,'+').replace(/[－-]/g,'-').toUpperCase();}
   function ionKeyFromLabel(v){const s=normIonName(v);if(s.startsWith('NA'))return'Na';if(/^K\+?/.test(s))return'K';if(s.startsWith('CA'))return'Ca';if(s.startsWith('MG'))return'Mg';if(s.startsWith('FE2'))return'Fe2';if(s.startsWith('FE3'))return'Fe3';if(s.startsWith('AL'))return'Al';if(s.startsWith('NH4'))return'NH4';if(s.startsWith('HCO3'))return'HCO3';if(s.startsWith('CO3'))return'CO3';if(s.startsWith('CL'))return'Cl';if(s.startsWith('SO4'))return'SO4';if(/^F-?/.test(s))return'F';if(s.startsWith('NO3'))return'NO3';return null;}
 
@@ -1420,6 +1758,8 @@
   // ---------- init ----------
   addKurlovRow();addKurlovRow();
   addIsotopeRow();addIsotopeRow();
+  addMwlRow();addMwlRow();addMwlRow();
+  addAltFitRow();addAltFitRow();addAltFitRow();
   addProfileRow({id:0});addProfileRow({id:1});
   addThicknessRow();
   updateMeteoricControls(false);
